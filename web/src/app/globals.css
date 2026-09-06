@@ -479,6 +479,9 @@ button {
   animation: none;
 }
 
+/* One muted glyph, one muted line (2026-09-06, at the user's direction).
+   `.empty-mark`'s circled plate and the sub-line lived here and are gone --
+   an empty stage should recede, not present a card. */
 .empty-stage {
   position: absolute;
   z-index: 6;
@@ -486,32 +489,16 @@ button {
   display: grid;
   place-content: center;
   justify-items: center;
+  gap: 13px;
   text-align: center;
+  color: var(--muted-2);
   pointer-events: none;
 }
 
-.empty-mark {
-  display: grid;
-  place-items: center;
-  width: 58px;
-  height: 58px;
-  margin-bottom: 15px;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  background: var(--surface);
-  color: var(--muted);
-}
-
 .empty-stage p {
-  margin: 0 0 5px;
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.empty-stage > span {
+  margin: 0;
   color: var(--muted-2);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 /* Top-anchored while there is room, then it scrolls. `top` + `max-height` +
@@ -1246,6 +1233,51 @@ button {
   transition: transform 180ms cubic-bezier(.2,.72,.24,1);
 }
 
+/* ONE STABLE ARROW PER SPEAKER, in that speaker's colour. A full-size rotating
+   layer with the arrow drawn up its centre, so it scales with the dial and its
+   angle needs no per-size maths -- the same trick `.compass-tick` uses. */
+.compass-arrow {
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  color: var(--arrow-color);
+  transform: rotate(var(--arrow-angle));
+  /* The bearings are stable, so this only eases a genuine re-placement, not
+     the per-talker jump the live needle had. */
+  transition: transform 320ms cubic-bezier(.2,.72,.24,1);
+  pointer-events: none;
+}
+.compass-arrow[data-stale="true"] { opacity: .4; }
+/* The shaft: a coloured line from the centre to just short of the rim. */
+.compass-arrow::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  width: 2px;
+  height: calc(50% - 8px);
+  background: linear-gradient(
+    to bottom,
+    currentColor,
+    color-mix(in srgb, currentColor 30%, transparent));
+  transform: translate(-50%, 0);
+  border-radius: 2px;
+}
+/* The head: a triangle at the rim, pointing outward. */
+.compass-arrow::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 1px;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 8px solid currentColor;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, currentColor 55%, transparent));
+}
+
 /* Standing speaker positions, after SpeechCompass's minimap (CHI '25). */
 .compass-slot {
   position: absolute;
@@ -1305,8 +1337,10 @@ button {
   transform: translate(-50%, -100%);
 }
 
+/* Softened now the per-speaker arrows carry "who is where": the live needle
+   is only the current arrival and must not out-shout the stable arrows. */
 .voice-compass[data-direction="known"] .compass-direction b {
-  opacity: .78;
+  opacity: .34;
 }
 
 .compass-direction i {
@@ -1323,7 +1357,7 @@ button {
 }
 
 .voice-compass[data-direction="known"] .compass-direction i {
-  opacity: 1;
+  opacity: .55;
 }
 
 .compass-pitch {
@@ -1490,18 +1524,27 @@ button {
   cursor: default;
 }
 
+/* THE PANEL IS CHROME, SO IT DRESSES LIKE THE RAIL (2026-09-06, at the
+   user's direction). It was a floating rounded card -- inset 12px, r-lg,
+   raised surface, strong border -- which is a second framing system on a
+   chrome that has exactly one. Now it is flat on the frame colour with the
+   rail's hairline and padding -- and FULL HEIGHT (same day, same user):
+   it is an overlay above the scrim, not a grid cell, so stopping at the
+   topbar read as a mistake rather than an alignment. */
 .settings-panel {
   position: fixed;
   z-index: 90;
-  top: 12px;
-  right: 12px;
-  bottom: 12px;
-  width: min(365px, calc(100vw - 24px));
-  padding: 22px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-lg);
-  background: var(--surface-raised);
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(365px, 100vw);
+  overflow: auto;
+  padding: 26px 22px 30px;
+  border-left: 1px solid var(--line);
+  background: var(--rail-bg);
   animation: panel-enter 180ms cubic-bezier(.2,.72,.24,1) both;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
 }
 
 .settings-panel > header {
@@ -1534,10 +1577,63 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+/* THE SLIDER IS DRAWN, NOT BORROWED (2026-09-06, at the user's direction):
+   the native control read as a different product. A 4px hairline track, the
+   travelled side in the one accent, and a plain white knob with a hairline
+   ring -- the ring, not a shadow, is what keeps it visible on the light
+   stage. The fill is `--fill`, set by React from the same value the output
+   element prints; WebKit has no progress pseudo-element, so the track is a
+   two-stop gradient. */
 .range-control input {
   grid-column: 1 / -1;
   width: 100%;
-  accent-color: var(--accent);
+  height: 20px;
+  margin: 2px 0 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.range-control input::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--fill, 50%),
+    var(--line-strong) var(--fill, 50%)
+  );
+}
+
+.range-control input::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border: 0;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .12);
+}
+
+.range-control input::-moz-range-track {
+  height: 4px;
+  border-radius: var(--r-pill);
+  background: var(--line-strong);
+}
+
+.range-control input::-moz-range-progress {
+  height: 4px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+}
+
+.range-control input::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .12);
 }
 
 .toggle-row {
@@ -1555,56 +1651,44 @@ button {
   cursor: pointer;
 }
 
+/* THE SWITCH, REDRAWN (2026-09-06, at the user's direction). The old one
+   was a bordered pill with a small tinted dot -- a diagram of a switch. This
+   is the platform's own grammar: a borderless track that IS the state (grey
+   off, the one accent on) and a full-height white knob that slides. The
+   knob's hairline ring, not a shadow, keeps it visible on the light stage. */
 .toggle-row > i {
   position: relative;
-  width: 31px;
-  height: 18px;
-  border: 1px solid var(--line-strong);
+  flex: 0 0 auto;
+  width: 40px;
+  height: 24px;
   border-radius: var(--r-pill);
-  background: var(--surface);
-  transition: background 140ms ease, border-color 140ms ease;
+  background: var(--line);
+  transition: background 180ms ease;
 }
 
 .toggle-row > i::after {
   content: "";
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 10px;
-  height: 10px;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  background: var(--muted);
-  transition: transform 140ms ease, background 140ms ease;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .12);
+  transition: transform 180ms cubic-bezier(.2,.72,.24,1);
 }
 
 .toggle-row > i[data-on="true"] {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
+  background: var(--accent);
 }
 
 .toggle-row > i[data-on="true"]::after {
-  background: var(--accent);
-  transform: translateX(13px);
+  transform: translateX(16px);
 }
 
-.settings-note {
-  display: flex;
-  align-items: start;
-  gap: 9px;
-  margin-top: 25px;
-  padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--good) 18%, var(--line));
-  border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--good) 5%, var(--surface));
-  color: var(--good);
-}
-
-.settings-note p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
+/* `.settings-note` LIVED HERE AND IS GONE (2026-09-06, at the user's
+   direction) -- a green-tinted callout was a second accent on the chrome. */
 
 /* THE READ-AHEAD LAYER -- CWI 2.2.1 and 2.2.2. */
 /* Normal -> the character's own 2.3 crest -> normal, exactly the shape the
@@ -1844,232 +1928,101 @@ button {
   background: var(--bg);
 }
 
-/* The glow, the gradient card fill, and the accent hairline above it were three
-   pieces of decorative chrome. Surface colour is the separation now. */
-.language-gate-glow {
-  display: none;
-}
-/* THE SETUP SCREEN FOLLOWS THE STUDIO IT OPENS INTO (2026-08-13). */
+/* THE GATE IS THREE BUTTONS IN THE MIDDLE OF THE PAGE (2026-09-06, at the
+   user's direction). Every line of copy is gone -- brand, heading, eyebrow,
+   descriptions, footer -- so the layout no longer needs a card frame or a
+   left axis: one centred stack of ghost pills and nothing else.
+   `.language-gate-glow`, `.language-gate-brand`, `.language-gate-footer`,
+   `.language-code` and `.language-name` lived here and are gone. */
 .language-gate-card {
-  position: relative;
-  width: min(100%, 640px);
-  background: none;
-}
-
-.language-gate-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 22px 24px;
-  border-bottom: 1px solid var(--line);
-}
-
-.language-gate-brand > div {
   display: grid;
-  gap: 3px;
-}
-
-.language-gate-brand strong {
-  color: var(--text);
-  font-size: 14px;
-  letter-spacing: -.01em;
-}
-
-.language-gate-brand div span {
-  color: var(--muted);
-  font-size: 12px;
+  justify-items: center;
+  gap: 28px;
+  width: min(100%, 420px);
 }
 
 .language-gate-copy {
-  padding: 34px 42px 22px;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  text-align: center;
 }
 
-/* NOT BLUE. */
-.language-gate-copy .eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--muted-2);
-}
-
-/* THE WHOLE SCREEN HAS TO FIT WITHOUT SCROLLING. */
 .language-gate-copy h1 {
-  max-width: 590px;
-  margin: 11px 0 10px;
+  margin: 0;
   color: var(--text);
-  font-size: clamp(30px, min(4.6vw, 6.4vh), 52px);
+  font-size: clamp(22px, 3.4vw, 34px);
   font-weight: 600;
-  line-height: 1.07;
-  letter-spacing: -.005em;
+  line-height: 1.14;
+  letter-spacing: -.374px;
   text-wrap: balance;
 }
 
 .language-gate-copy p {
-  max-width: 570px;
+  max-width: 440px;
   margin: 0;
-  color: var(--muted);
-  font-size: 17px;
-  line-height: 1.47;
-  letter-spacing: -.374px;
-}
-/* A LIST, NOT A GRID. */
-.language-options {
-  display: grid;
-  gap: 0;
-  padding: 0 42px 36px;
-}
-
-.language-option {
-  position: relative;
-  display: grid;
-  /* Code, name, description -- a fixed first column so the three names start on
-     the same axis whatever their code is, and the chevron pinned right. */
-  grid-template:
-    "code name arrow" auto
-    "code description arrow" auto
-    / 46px minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 4px 4px;
-  padding: clamp(13px, 2.1vh, 20px) 4px;
-  border: 0;
-  border-top: 1px solid var(--line);
-  border-radius: 0;
-  background: none;
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-  transition: opacity 140ms ease;
-}
-
-.language-option:last-child {
-  border-bottom: 1px solid var(--line);
-}
-
-.language-option:active {
-  opacity: .62;
-}
-
-.language-option > svg {
-  grid-area: arrow;
-  align-self: center;
-  color: var(--muted-2);
-}
-
-
-/* Default and pressed only. */
-.language-option > svg {
-  grid-area: arrow;
-  align-self: center;
-  color: var(--muted);
-}
-/* The code is a label, not a chip. */
-.language-code {
-  grid-area: code;
-  color: var(--muted-2);
-  font: 500 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: .06em;
-}
-
-.language-name {
-  grid-area: name;
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-  min-width: 0;
-}
-
-
-/* A button label, not a caption sample, so it takes the Apple UI face --
-   the boundary rule: nothing outside `.caption-word` is CWI. */
-.language-name strong {
-  font-size: 28px;
-  font-weight: 600;
-  letter-spacing: -.28px;
-}
-
-.language-option[lang="ko"] .language-name strong {
-  /* Hangul at display size wants a touch more than the Latin ramp value. */
-  letter-spacing: -.4px;
-}
-
-.language-name small {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.language-description {
-  grid-area: description;
   color: var(--muted);
   font-size: 14px;
   line-height: 1.43;
   letter-spacing: -.224px;
 }
 
-.language-loading {
+.language-options {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+}
+
+/* The ghost pill -- the chrome's one action shape, at the tagline size. A
+   button label, not a caption sample, so it takes the Apple UI face; the
+   boundary rule: nothing outside `.caption-word` is CWI. */
+.language-option {
+  min-height: 62px;
+  padding: 16px 32px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--text);
+  font: 600 21px/1.19 var(--font-ui);
+  letter-spacing: -.2px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 140ms ease, opacity 140ms ease;
+}
+
+/* Default and pressed only -- the system-wide press is a scale, not a tint. */
+.language-option:active {
+  opacity: .72;
+  transform: scale(.95);
+}
+
+/* `.language-loading`'s bordered card lived here and is gone (2026-09-06,
+   at the user's direction) -- the "Preparing <label>" heading says what is
+   loading, so the ring alone shows that it still is, sitting beside the
+   heading on one line. */
+.language-gate-state {
   display: flex;
   align-items: center;
-  gap: 15px;
-  margin: 0 42px 42px;
-  padding: 18px 19px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: rgb(var(--tint) / .018);
+  justify-content: center;
+  gap: 14px;
 }
 
 .language-loader {
-  width: 30px;
-  height: 30px;
+  display: block;
   flex: 0 0 auto;
-  border: 2px solid var(--line-strong);
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--line);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: language-spin .9s linear infinite;
 }
 
-.language-loading div {
-  display: grid;
-  gap: 5px;
-}
-
-.language-loading strong {
-  font-size: 14px;
-}
-
-.language-loading div span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
 .language-error {
-  margin: -22px 42px 28px;
+  margin: 0;
   color: var(--danger);
   font-size: 12px;
-}
-
-.language-gate-footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 15px 24px;
-  border-top: 1px solid var(--line);
-  color: var(--muted-2);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: .09em;
-}
-
-.language-gate-footer span:first-child {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.language-gate-footer i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--good);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--good) 70%, transparent);
+  text-align: center;
 }
 
 @keyframes language-spin {
@@ -2174,24 +2127,7 @@ button {
     display: none;
   }
   .language-gate {
-    padding: 12px;
-  }
-  .language-gate-copy {
-    padding: 30px 24px 22px;
-  }
-  .language-options {
-    grid-template-columns: 1fr;
-    padding: 0 24px 28px;
-  }
-  .language-option {
-    min-height: 136px;
-  }
-  .language-loading {
-    margin: 0 24px 28px;
-  }
-  .language-gate-footer {
-    align-items: flex-start;
-    flex-direction: column;
+    padding: 20px;
   }
 }
 

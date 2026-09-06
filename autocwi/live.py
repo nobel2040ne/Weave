@@ -1156,6 +1156,58 @@ def _word_delivery_features(
     }
 
 
+_SCRIPT_RANGES = (
+    # Hangul syllables, jamo, compatibility jamo -- the same blocks the
+    # frontend's `isWideChar` treats as Korean.
+    ("hangul", 0xAC00, 0xD7A3),
+    ("hangul", 0x1100, 0x11FF),
+    ("hangul", 0x3130, 0x318F),
+    ("latin", 0x0041, 0x005A),
+    ("latin", 0x0061, 0x007A),
+    # Latin-1/Extended letters (café, naïve) are still Latin script.
+    ("latin", 0x00C0, 0x024F),
+)
+
+
+def _letter_script(ch: str) -> str | None:
+    """'hangul', 'latin', another script name, or None for a non-letter."""
+
+    if not ch.isalpha():
+        return None
+    o = ord(ch)
+    for name, lo, hi in _SCRIPT_RANGES:
+        if lo <= o <= hi:
+            return name
+    return "other"
+
+
+def word_script_allowed(text: str, allowed: frozenset[str]) -> bool:
+    """Is this word's script one the session is allowed to show?
+
+    THE BILINGUAL LANGUAGE ID CAN PICK ANY OF 40 LOCALES, and live resets the
+    stream at every endpoint, so every utterance gets its own decision. A wrong
+    one decodes Korean speech as Japanese or Chinese and the stage shows Kana
+    or Han ideographs -- measured on FLEURS through the `multi` profile, ~1% of
+    short segments leak (`おいり 사회의 본질`, `استهلك a dinosau`), always as a
+    PREFIX: the ID commits early on little evidence, emits a token or two, then
+    self-corrects. Those tokens are noise, not missed content, which is why the
+    right response is to drop the word rather than re-decode anything.
+
+    Majority-of-letters, so a real word with one stray glyph survives; a word
+    with no letters at all (numbers, punctuation) is script-neutral and always
+    passes. With `allowed` empty the gate is off -- that is every profile
+    except `multi`, and the pinned profiles cannot leak in the first place.
+    """
+
+    if not allowed:
+        return True
+    scripts = [s for s in map(_letter_script, text) if s is not None]
+    if not scripts:
+        return True
+    outside = sum(1 for s in scripts if s not in allowed)
+    return outside * 2 <= len(scripts)
+
+
 def hypothesis_words(result, audio_duration: float) -> list[HypothesisWord]:
     """Collapse sherpa token pieces into timestamped display words.
 
@@ -2158,7 +2210,16 @@ class SpeakerTracker:
             float(short_stable_max_duration_s),
         )
         self.min_signal_quality = float(np.clip(min_signal_quality, 0.0, 1.0))
-        self.direction_prior_weight = float(np.clip(direction_prior_weight, 0.0, 0.25))
+        # THE RATIO BETWEEN THE VOICE ALGORITHM AND THE DIRECTION SENSOR.
+        # In `_score`, confidence = (1 - w) * embedding + w * direction, so w is
+        # literally the direction sensor's SHARE of a match decision. It was
+        # capped at 0.25 as "a weak prior only"; the cap is 0.90 now so a booth
+        # in a hard room, where the embedding flickers on short spontaneous
+        # turns but the array's bearing is steady, can dial the sensor up until
+        # it dominates. Only bites when a bearing is actually present (the array
+        # is attached); on a local mic `direction_estimate` is None and the
+        # blend is skipped, so raising this changes nothing without the array.
+        self.direction_prior_weight = float(np.clip(direction_prior_weight, 0.0, 0.90))
         self.change_below = float(change_below)
         self.merge_at = float(merge_at)  # retained config/API compatibility
         self.debug = bool(debug)
@@ -3502,6 +3563,18 @@ class StreamingCaptioner:
         self.speaker = speaker
         self.draft_only = draft_only
         self.verifier = verifier
+        # Bilingual only: scripts the session may show. Words failing
+        # `word_script_allowed` are dropped before anything downstream sees
+        # them. Empty = off.
+        self.allowed_scripts = frozenset(
+            str(item).strip().lower()
+            for item in ((cfg.get("live", {}) or {}).get("allowed_scripts") or [])
+            if str(item).strip()
+        )
+        # Bilingual only: run the English endpoint verifier on English
+        # utterances and leave Korean ones to the stream. See `_verifier_skips`.
+        self.verifier_latin_only = bool(
+            (cfg.get("live", {}) or {}).get("verifier_latin_only", False))
         self.speaker_tracker = speaker_tracker
         self.stream = self._new_stream()
         self.stream_base = 0.0
@@ -3574,6 +3647,24 @@ class StreamingCaptioner:
             cfg.get("live", {})
             .get("speaker_attribution", {})
             .get("read_ahead_attribution", True)
+        )
+        # STABILITY MODE: never introduce a NEW specific speaker mid-stream.
+        # Measured on real Korean dialogue, 18% of words are attributed to one
+        # speaker mid-turn and CORRECTED at the endpoint -- and every flip is a
+        # confident wrong guess on a short span (the embedding matches the wrong
+        # enrolled voice before the full utterance is in). When on, a mid-stream
+        # pick that is neither the currently-active speaker nor a `stable`
+        # decision is published GREY instead, so the word goes grey -> right
+        # colour (not flicker) rather than wrong colour -> right colour. This is
+        # the design system's own preference -- "a wrong colour is a false claim
+        # about who spoke; neutral is the unknown state" -- traded against a
+        # little more first-paint grey. Default OFF: it is UNMEASURED for its
+        # cost in first-paint correctness (no labelled data), and the array's
+        # `direction_trust` is the better fix where the hardware is present.
+        self._readahead_stability = bool(
+            cfg.get("live", {})
+            .get("speaker_attribution", {})
+            .get("readahead_stability", False)
         )
 
     @property
@@ -4625,6 +4716,12 @@ class StreamingCaptioner:
         audio = self.audio
         result = self.recognizer.get_result_all(self.stream)
         current = hypothesis_words(result, len(audio) / SR)
+        if self.allowed_scripts:
+            # ONE choke point, before ids are assigned, so commits, partials
+            # and the verifier all see the same filtered list and a dropped
+            # word can never have claimed an id first.
+            current = [word for word in current
+                       if word_script_allowed(word.text, self.allowed_scripts)]
         current_word_ids = self._word_ids_for(current)
 
         if self.draft_only:
@@ -4665,9 +4762,31 @@ class StreamingCaptioner:
                 timestamp_offset=self.stream_base,
                 direction_estimate=bearing,
             )
-            return self._colour_from_direction(result, bearing)
+            result = self._colour_from_direction(result, bearing)
+            if self._readahead_stability and result is not None:
+                # Suppress a mid-stream pick that is a NEW specific speaker: keep
+                # only a `stable`/`corrected` decision or a continuation of the
+                # active speaker; anything else waits grey for the endpoint.
+                sid = getattr(result, "speaker_id", None)
+                status = getattr(result, "status", None)
+                active = getattr(self.speaker_tracker,
+                                 "last_confidently_active_speaker", None)
+                if (sid is not None
+                        and status not in ("stable", "corrected")
+                        and sid != active):
+                    return None
+            return result
 
-        if self.verifier is None:
+        # WHETHER THIS UTTERANCE GETS VERIFIED, DECIDED ONCE.
+        # It selects the emission path as well as the verification pass, and
+        # those two MUST agree: when a verifier exists, durable words are
+        # emitted only by the verification block below, so an utterance that
+        # skips verification without also taking the no-verifier path here
+        # produces no final words at all. Measured when this was a bare `skip`:
+        # Korean on the bilingual profile returned 120/120 clips SILENT.
+        verifying = self.verifier is not None and not self._verifier_skips(current)
+
+        if not verifying:
             if endpoint and current and self.speaker_tracker is not None:
                 # Korean deliberately has no weaker offline text verifier, but
                 # speaker attribution still needs one full-utterance endpoint
@@ -4720,7 +4839,7 @@ class StreamingCaptioner:
         if commit_to > len(self.committed):
             self.committed = current[:commit_to]
 
-        if self.verifier is not None and endpoint and current:
+        if verifying and endpoint and current:
             verified_text = self.verifier.transcribe(audio)
             verified = conservative_verified_words(
                 current,
@@ -4901,6 +5020,35 @@ class StreamingCaptioner:
         if language and hasattr(stream, "set_option"):
             stream.set_option("language", language)
         return stream
+
+    def _verifier_skips(self, words) -> bool:
+        """Does this utterance belong to a language the verifier cannot read?
+
+        THE ENDPOINT VERIFIER IS AN ENGLISH MODEL. `parakeet-unified-en-offline`
+        is what the English profile gains its durable text from, and it is the
+        lane the bilingual profile went without -- so `multi` was being compared
+        against `en` with a whole correction stage missing, which is not a
+        comparison between two sets of model weights at all.
+
+        Giving `multi` that lane back is only safe if it never reads a Korean
+        utterance. `conservative_verified_words` reconciles the stream against
+        the verifier's text per word, so an English recognizer handed Hangul
+        does not degrade the result politely -- it proposes a whole alternative
+        utterance in the wrong script.
+
+        The gate is the SCRIPT OF THE HYPOTHESIS, not the configured language:
+        in a bilingual session the language is a per-utterance fact, and the
+        stream has already decided it by the time an endpoint fires. Any Hangul
+        at all disqualifies the utterance, because the verifier replaces the
+        whole line rather than the Korean part of it.
+        """
+
+        if not self.verifier_latin_only:
+            return False
+        from .scoring import is_korean
+
+        return any(is_korean(str(getattr(word, "text", "") or ""))
+                   for word in words)
 
     def _reset_stream(self, base: float | None = None) -> None:
         self.stream_base = self.total_samples / SR if base is None else base
@@ -5287,6 +5435,12 @@ def load_streaming_recognizer(cfg: dict, model_dir: str | Path | None = None):
         rule3_min_utterance_length=live_cfg.get("endpoint_max_s", 12.0),
         decoding_method=live_cfg.get("decoding_method", "greedy_search"),
         max_active_paths=live_cfg.get("streaming_max_active_paths", 4),
+        # RECALL KNOB. Subtracted from the blank logit at every frame, so a
+        # positive value makes the transducer less willing to emit nothing.
+        # This buys COVERAGE with insertions, which is the trade this project
+        # wants on the stage: a wrong word is a caption, a dropped word is a
+        # hole the viewer cannot even see. Default 0.0 = stock behaviour.
+        blank_penalty=float(live_cfg.get("blank_penalty", 0.0)),
     )
 
 
@@ -5395,7 +5549,12 @@ def load_speaker_tracker(cfg: dict) -> SpeakerTracker | None:
             "short_stable_max_duration_s", 1.3
         ),
         min_signal_quality=policy.get("min_signal_quality", 0.25),
-        direction_prior_weight=policy.get("direction_prior_weight", 0.05),
+        # `direction_trust` is the current name for the voice/direction ratio;
+        # `direction_prior_weight` is kept as a fallback so old configs and the
+        # `--gain`-style CLI override both still resolve.
+        direction_prior_weight=policy.get(
+            "direction_trust",
+            policy.get("direction_prior_weight", 0.05)),
         speaker_activity=speaker_activity,
         debug=policy.get("debug", False),
     )
@@ -5922,9 +6081,21 @@ def make_handler(
     language_session: LiveLanguageSession | None = None,
 ):
     static_root = static_root.resolve() if static_root is not None else None
-    runtime_body = json.dumps(
-        runtime_config or {}, ensure_ascii=False
-    ).encode("utf-8")
+
+    def runtime_body() -> bytes:
+        """Serialized on request, NOT once at startup.
+
+        The studio opens before the language picker is answered, and the
+        picked profile can override `display:` keys -- `read_ahead_delay_s`
+        does, because the recognizers differ in latency. A body frozen at
+        construction always describes the pre-language config, which is how
+        Korean served a 1750 ms read-ahead budget it cannot meet. `run_live`
+        updates `runtime_config` in place once the language is resolved, and
+        the client re-fetches when the session language changes.
+        """
+        return json.dumps(
+            runtime_config or {}, ensure_ascii=False
+        ).encode("utf-8")
 
     class Handler(http.server.BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -5998,7 +6169,7 @@ def make_handler(
                 )
             elif path == "/runtime-config.json":
                 self._send_bytes(
-                    runtime_body, "application/json; charset=utf-8"
+                    runtime_body(), "application/json; charset=utf-8"
                 )
             elif path == "/session" and language_session is not None:
                 self._send_json(language_session.snapshot())
@@ -6248,6 +6419,16 @@ def _configure_live_language(cfg: dict, language: str) -> dict:
             f"unsupported live language {language!r}; choose one of: {supported}"
         )
     override = dict(languages.get(language, {}) or {})
+    # A PROFILE MAY ALSO OVERRIDE `display:` KEYS, and the read-ahead budget is
+    # why. `display.read_ahead_delay_s` has to exceed the recognizer's OWN
+    # latency or CWI 2.2.1 delivers nothing, and the profiles do not share a
+    # recognizer: MEASURED 2026-09-04 at the shipped 1.75 s, English delivers
+    # 488 ms of read-ahead and Korean delivers **0 ms**, because the 1120 ms
+    # multilingual model plus its endpoint hold-back spends the whole budget.
+    # Raising the GLOBAL would push English 1.45 s further behind the speaker
+    # to fix a profile it is already fine for, so the budget belongs to the
+    # profile. Popped before the `live:` merge so it cannot also land there.
+    display_override = dict(override.pop("display", {}) or {})
     merged = {**live_cfg, **override, "lang": language}
     for nested in (
         "onset_prefix",
@@ -6259,7 +6440,13 @@ def _configure_live_language(cfg: dict, language: str) -> dict:
                 **(live_cfg.get(nested, {}) or {}),
                 **(override.get(nested, {}) or {}),
             }
-    return {**cfg, "live": merged}
+    resolved = {**cfg, "live": merged}
+    if display_override:
+        resolved["display"] = {
+            **(cfg.get("display", {}) or {}),
+            **display_override,
+        }
+    return resolved
 
 
 def _studio_runtime_config(
@@ -6310,6 +6497,15 @@ def _studio_runtime_config(
         # playhead. This guarantees every word is readable before it turns.
         "minReadAheadMs": round(
             float(display.get("min_read_ahead_ms", 420))
+        ),
+        # STAGGER FOR CAUGHT-UP WORDS. The recognizer releases a batch of words
+        # at each endpoint; when they are all behind the playhead they clamp to
+        # the same per-word floor and pop as one wall, which reads as "the
+        # queued words popped at once". This spaces successive floor-clamped
+        # words so a release ripples instead. Only the studio uses it; the
+        # legacy diagnostics page reads the raw `word_reveal_*` keys.
+        "wordRevealCatchupGapMs": round(
+            float(display.get("word_reveal_catchup_gap_s", 0.06)) * 1000
         ),
         "readAheadColor": read_ahead.get("color", "#FFFFFF"),
         # Same read-ahead, legible on the boxless light stage. See config.yaml.
@@ -6498,6 +6694,18 @@ def run_live(args, cfg: dict, device: str) -> None:
     cfg = {**cfg, "live": {**live_cfg, "input_gain": gain_cfg}}
     live_cfg = cfg["live"]
 
+    # Same pattern for the voice/direction ratio: pin it from the booth without
+    # editing the config. Applied AFTER the language overlay so it overrides the
+    # active profile's speaker_attribution, not the root default.
+    if getattr(args, "direction_trust", None) is not None:
+        trust = float(np.clip(args.direction_trust, 0.0, 0.9))
+        sa = dict(live_cfg.get("speaker_attribution", {}) or {})
+        sa["direction_trust"] = trust
+        cfg = {**cfg, "live": {**live_cfg, "speaker_attribution": sa}}
+        live_cfg = cfg["live"]
+        print(f"[live] direction trust pinned to {trust:.2f} "
+              f"(voice {1 - trust:.2f} / direction {trust:.2f})")
+
     legacy_page = _legacy_page_resolver(cfg, out)
     (
         page,
@@ -6593,6 +6801,13 @@ def run_live(args, cfg: dict, device: str) -> None:
     assert lang is not None
     cfg = _configure_live_language(cfg, lang)
     live_cfg = cfg["live"]
+    # The profile may override `display:` keys, and the runtime config handed
+    # to the studio was built before the language was known. Update it IN
+    # PLACE: the server closed over this dict, and `/runtime-config.json` is
+    # serialized per request precisely so this lands.
+    if runtime_config is not None:
+        runtime_config.clear()
+        runtime_config.update(_studio_runtime_config(cfg))
     diarizer_override = getattr(args, "diarizer", None)
     if diarizer_override is not None:
         cfg = {

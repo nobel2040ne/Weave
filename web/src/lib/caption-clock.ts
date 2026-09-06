@@ -131,3 +131,47 @@ export function readAheadMs(
   }
   return Math.max(0, newestAcousticMs - playhead);
 }
+
+/** The moment a word turns colour, and whether the read-ahead floor decided it.
+
+    Three inputs settle it: the word's own acoustic turn, the per-word floor
+    (`now + minReadAheadMs`, because a time delay alone cannot guarantee every
+    word is legible before it is spoken), and -- the 2026-09-04 addition -- the
+    turn of the previous FLOOR-CLAMPED word, so a burst released together does
+    not collapse onto one moment.
+
+    A transducer emits words in bursts at each endpoint. When those words are
+    behind the playhead their honest turn is in the past, so each takes the
+    floor -- and because they are all scheduled in one commit they share the
+    same `nowMs`, hence the same floor, hence turn in the SAME frame. Measured
+    on live Korean, bursts of four words carrying 1.28-1.76s of acoustic spread
+    arrived within 50ms and would pop as one wall. `lastFloorTurnMs` chains such
+    words by `catchupGapMs` into a ripple. A word whose acoustic turn is still
+    AHEAD of the floor is untouched: it is already spaced by its own onset, and
+    holding it back would flatten genuine fast speech, whose overlapping pops
+    are the design working. The chain is self-limiting -- once the playhead
+    idles, the floor overtakes it and it resets -- so a burst can never push a
+    word unboundedly into the future.
+*/
+export interface TurnMoment {
+  turnAtMs: number;
+  /** True when the read-ahead floor (not the acoustic turn) set the moment. */
+  clamped: boolean;
+}
+
+export function turnMomentFor(
+  acousticTurnMs: number,
+  nowMs: number,
+  minReadAheadMs: number,
+  lastFloorTurnMs: number,
+  catchupGapMs: number,
+): TurnMoment {
+  const floorMs = nowMs + Math.max(0, minReadAheadMs);
+  const clamped = floorMs >= acousticTurnMs;
+  if (!clamped) {
+    return {turnAtMs: acousticTurnMs, clamped: false};
+  }
+  const gap = Math.max(0, catchupGapMs);
+  const turnAtMs = Math.max(floorMs, lastFloorTurnMs + gap);
+  return {turnAtMs, clamped: true};
+}

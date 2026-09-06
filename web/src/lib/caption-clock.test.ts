@@ -8,6 +8,7 @@ import {
   monotonicTimeForAcousticMs,
   presentationNowMs,
   readAheadMs,
+  turnMomentFor,
 } from "./caption-clock.ts";
 
 test("no captions are presented before the first acoustic sample", () => {
@@ -91,4 +92,54 @@ test("read-ahead is what the delay buys over recognizer latency", () => {
   assert.equal(readAheadMs(clock, 28_900, 10_000, 2_500), 1_400);
   // A delay shorter than the recognizer's latency buys nothing at all.
   assert.equal(readAheadMs(clock, 28_900, 10_000, 900), 0);
+});
+
+test("a word whose acoustic turn is ahead of the floor is untouched", () => {
+  // Onset comfortably in the future: use acoustic time, do not clamp, do not
+  // touch the floor chain. This is the fast-speech path -- its overlapping
+  // pops are the design working and must not be staggered.
+  const m = turnMomentFor(5_000, 1_000, 420, Number.NEGATIVE_INFINITY, 60);
+  assert.equal(m.clamped, false);
+  assert.equal(m.turnAtMs, 5_000);
+});
+
+test("a caught-up word takes the read-ahead floor, never less", () => {
+  // Acoustic turn already in the past -> floor = now + minReadAhead.
+  const m = turnMomentFor(200, 1_000, 420, Number.NEGATIVE_INFINITY, 60);
+  assert.equal(m.clamped, true);
+  assert.equal(m.turnAtMs, 1_420);
+});
+
+test("a burst of caught-up words RIPPLES instead of popping as one wall", () => {
+  // Four words released in one commit: same `now`, all behind the playhead.
+  // Without chaining they would share turnAtMs = 1_420 and pop in one frame.
+  // Each carries the previous floor turn forward, exactly as the hook does.
+  const now = 1_000;
+  const gap = 60;
+  let last = Number.NEGATIVE_INFINITY;
+  const turns: number[] = [];
+  for (const acoustic of [100, 250, 500, 900]) {
+    const m = turnMomentFor(acoustic, now, 420, last, gap);
+    assert.equal(m.clamped, true);
+    last = m.turnAtMs;
+    turns.push(m.turnAtMs);
+  }
+  assert.deepEqual(turns, [1_420, 1_480, 1_540, 1_600]);
+  // The wall is gone: no two words share a turn moment.
+  assert.equal(new Set(turns).size, turns.length);
+});
+
+test("the floor chain resets once the playhead catches up", () => {
+  // A stale chain value from an earlier burst must not delay a later word that
+  // arrives after a quiet gap: `max(floor, last+gap)` lets the floor win.
+  const stale = 1_600;
+  const m = turnMomentFor(200, 5_000, 420, stale, 60);
+  assert.equal(m.turnAtMs, 5_420); // floor, not stale+gap
+});
+
+test("an acoustic-timed word does not advance the floor chain", () => {
+  // A future-onset word between two caught-up bursts must leave the chain
+  // where it was, or it would inject a phantom gap. The hook only advances
+  // `lastFloorTurn` when `clamped` is true; assert the flag that gates it.
+  assert.equal(turnMomentFor(9_000, 1_000, 420, 2_000, 60).clamped, false);
 });

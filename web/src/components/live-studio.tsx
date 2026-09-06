@@ -4,8 +4,6 @@ import {
   AudioWaveform,
   AlignEndHorizontal,
   Captions,
-  Check,
-  ChevronRight,
   CircleGauge,
   Eye,
   Globe2,
@@ -687,8 +685,98 @@ const MotionWord = memo(function MotionWord({
    in the node, not here. */
 const COMPASS_BEARING_OFFSET_DEG = 180;
 
+/* How many per-speaker arrows the dial draws. Three reads as a room; more
+   turns into a star-burst. The arcs still mark every speaker beyond this. */
+const COMPASS_ARROWS = 3;
+
 const compassBearing = (deg: number): number =>
   (((deg + COMPASS_BEARING_OFFSET_DEG) % 360) + 360) % 360;
+
+/* METER BALLISTICS FOR THE DIAL'S LEVEL CHANNELS.
+   `rms_db` is a per-block measurement arriving every `level_event_period_s`
+   (120 ms), and it is not a smooth signal: MEASURED over 191 live events, its
+   frame-to-frame step is a median of 3.9 dB and a p90 of 12.6 dB. That reaches
+   `--orb-scale`, which is a `transform: scale()` on `.voice-compass` ITSELF, so
+   every tick, arc and needle moves with it -- a p90 step of 12.6 dB is 0.13x of
+   scale, about 26 px of travel on a 200 px dial, eight times a second.
+
+   Lengthening the CSS transition was tried first (2026-08-13, "SMOOTHED, NOT
+   SHRUNK") and cannot fix it: a 340 ms ease against a 120 ms event period never
+   reaches its target before the next one arrives, so the dial just chases
+   continuously. The step has to be smaller before it reaches CSS.
+
+   Asymmetric on purpose, the way any level meter is: a fast attack so a real
+   onset still registers as one, a slow release so the dial settles instead of
+   chattering between syllables. DISPLAY ONLY -- `level` itself is untouched, so
+   the event stream, the probes and `autocwi/haptics.py` all still see the raw
+   measurement. */
+const METER_ATTACK_TAU_S = 0.18;
+const METER_RELEASE_TAU_S = 0.55;
+
+function ballistic(current: number, target: number, dt: number): number {
+  const tau = target > current ? METER_ATTACK_TAU_S : METER_RELEASE_TAU_S;
+  // Time-constant form, not a fixed coefficient: the event period is nominal
+  // and a dropped or batched block would otherwise change the smoothing.
+  const alpha = 1 - Math.exp(-Math.max(dt, 1e-3) / tau);
+  return current + (target - current) * alpha;
+}
+
+function useMeterBallistics(
+  volume: number,
+  periodicity: number,
+  t: number,
+): {volume: number; periodicity: number} {
+  const [smoothed, setSmoothed] = useState({volume, periodicity});
+  const lastT = useRef<number | null>(null);
+  useEffect(() => {
+    const previous = lastT.current;
+    const known = Number.isFinite(t);
+    // The AUDIO clock, not the wall clock: the level event carries the source
+    // position, and pacing off wall time would smooth differently whenever the
+    // decoder ran behind.
+    const dt = previous !== null && known
+      ? Math.min(Math.max(t - previous, 0), 1)
+      : 0.12;
+    if (known) lastT.current = t;
+    setSmoothed((current) => ({
+      volume: ballistic(current.volume, volume, dt),
+      periodicity: ballistic(current.periodicity, periodicity, dt),
+    }));
+  }, [t, volume, periodicity]);
+  return smoothed;
+}
+
+/* A STATUS WORD THAT CHANGES EIGHT TIMES A SECOND IS NOT A READING.
+   MEASURED over the same 191 events, `status` changed on 34% of frames --
+   `idle` and `good` alternating through every pause between words, in a rail
+   whose whole job is to answer "is the microphone working" at a glance. A new
+   value has to hold before it is shown. `clipping` is exempt: it is the one
+   value that is a warning, and a warning must not be delayed. */
+const STATUS_DWELL_EVENTS = 4;
+
+function useSettledStatus(status: string): string {
+  const [shown, setShown] = useState(status);
+  const pending = useRef<{value: string; count: number}>({value: status, count: 0});
+  useEffect(() => {
+    if (status === "clipping") {
+      pending.current = {value: status, count: 0};
+      setShown(status);
+      return;
+    }
+    setShown((current) => {
+      if (status === current) {
+        pending.current = {value: current, count: 0};
+        return current;
+      }
+      const seen = pending.current.value === status
+        ? pending.current.count + 1
+        : 1;
+      pending.current = {value: status, count: seen};
+      return seen >= STATUS_DWELL_EVENTS ? status : current;
+    });
+  }, [status]);
+  return shown;
+}
 
 /* THE SIDE-GRID INSTRUMENT, AND NOW THE ONLY ONE. */
 function VoiceCompass({
@@ -702,14 +790,19 @@ function VoiceCompass({
   speakerColors?: SpeakerColorMap;
   sound?: {label?: string; category?: string} | null;
 }) {
-  const volume = clamp((number(level.rms_db, -72) + 60) / 45, 0, 1);
+  const rawVolume = clamp((number(level.rms_db, -72) + 60) / 45, 0, 1);
+  const rawPeriodicity = clamp(number(level.pitch_confidence, 0), 0, 1);
+  // The two channels that still reach the screen go through meter ballistics;
+  // see `useMeterBallistics`.
+  const {volume, periodicity} = useMeterBallistics(
+    rawVolume, rawPeriodicity, number(level.t, Number.NaN),
+  );
   const pitch = clamp((number(level.pitch_hz, 165) - 80) / 170, 0, 1);
   const brightness = clamp(
     (number(level.spectral_centroid_hz, 1600) - 500) / 3000,
     0,
     1,
   );
-  const periodicity = clamp(number(level.pitch_confidence, 0), 0, 1);
   const force = clamp(number(level.delivery_force, volume), 0, 1);
   const attack = clamp(number(level.delivery_attack), 0, 1);
   const contour = clamp(number(level.delivery_contour), -1, 1);
@@ -830,7 +923,35 @@ function VoiceCompass({
           />
         );
       })}
-      {/* THE NEEDLE. A 9px dot on the rim asked the viewer to find it and then
+      {/* AN ARROW PER SPEAKER, NOT ONE NEEDLE THAT CHASES THE TALKER
+          (2026-09-05, at the user's request). The single live needle tracks the
+          INSTANTANEOUS bearing, so it flips to whoever speaks and reads as
+          constant jitter. Each speaker's own standing bearing is stable, so a
+          fixed arrow per speaker -- in that speaker's colour -- lets the viewer
+          read the room at a glance instead of following a jumping line. Capped
+          at COMPASS_ARROWS so a large cast cannot turn the dial into a
+          star-burst; the arcs still mark everyone. Only appears with the mic
+          array (no bearings without it), exactly like the needle. */}
+      {slots.slice(0, COMPASS_ARROWS).map((bearing, index) => {
+        const angle = compassBearing(Number(bearing));
+        const stale = Boolean(marks.length && marks[index]?.stale);
+        return (
+          <span
+            key={`arrow-${index}`}
+            className="compass-arrow"
+            data-stale={stale ? "true" : "false"}
+            style={{
+              "--arrow-angle": `${angle.toFixed(1)}deg`,
+              "--arrow-color": speakerColors
+                ? speakerColor(slotSpeaker(index), speakerColors)
+                : "var(--accent)",
+            } as CSSVars}
+          />
+        );
+      })}
+      {/* THE LIVE NEEDLE. With per-speaker arrows now carrying "who is where",
+          this is only the CURRENT arrival, kept subtle so it no longer
+          dominates. A 9px dot on the rim asked the viewer to find it and then
           work out which way it lay; a line from the centre states the bearing
           the way a compass has always stated it. The dot stays at its tip --
           it is what carries the ACTIVE speaker's colour. */}
@@ -1430,87 +1551,63 @@ function LanguageGate({
       className="language-gate"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="language-gate-title"
+      aria-label="Caption language setup"
     >
-      <div className="language-gate-glow" aria-hidden="true" />
       <div className="language-gate-card">
-        <header className="language-gate-brand">
-          <div>
-            <strong>Weave</strong>
-            <span>Live caption setup</span>
+        {/* EVERY LINE OF COPY IS GONE (2026-09-06, at the user's direction):
+            the brand header, the "What language will be spoken?" heading, the
+            eyebrow, the descriptions and the "On-device processing" footer.
+            While choosing, the three options ARE the screen -- a centred
+            stack of pill buttons, each just the English label. A heading
+            renders only when there is a state to report: preparing, or the
+            engine being unreachable. */}
+        {!selecting && (
+          <div className="language-gate-copy">
+            <div className="language-gate-state">
+              {/* A bare ring BESIDE the heading (2026-09-06, at the user's
+                  direction). The boxed "Loading locally / <label> speech
+                  model" card restated the "Preparing <label>" heading; the
+                  ring alone says the rest. */}
+              {!unavailable && (
+                <span
+                  className="language-loader"
+                  role="status"
+                  aria-label="Loading"
+                />
+              )}
+              <h1>
+                {unavailable
+                  ? "The local caption engine is unavailable"
+                  : selected
+                    ? `Preparing ${selected.label}`
+                    : "Preparing language setup"}
+              </h1>
+            </div>
+            {unavailable && (
+              <p>
+                Open this studio through “python -m autocwi live” so it can
+                reach the local session controller.
+              </p>
+            )}
           </div>
-        </header>
+        )}
 
-        <div className="language-gate-copy">
-          {/* The eyebrow was the only blue thing on the screen, and blue is
-              the interactive signal -- on a page whose entire content is three
-              buttons, colouring the one non-interactive line was backwards. */}
-          <span className="eyebrow">
-            <Globe2 size={13} aria-hidden="true" />
-            Session language
-          </span>
-          <h1 id="language-gate-title">
-            {selecting
-              ? "What language will be spoken?"
-              : unavailable
-                ? "The local caption engine is unavailable"
-                : selected
-                  ? `Preparing ${selected.nativeLabel}`
-                  : "Preparing language setup"}
-          </h1>
-          <p>
-            {selecting
-              ? "Choose before capture begins. Weave will load the matching local speech model and lock it for this session."
-              : unavailable
-                ? "Open this studio through “python -m autocwi live” so it can reach the local session controller."
-                : "Loading the matching recognizer before microphone capture starts. No audio has been captured yet."}
-          </p>
-        </div>
-
-        {selecting ? (
+        {selecting && (
           <div className="language-options" role="list" aria-label="Caption language">
             {session.languages.map((language: LiveLanguageOption) => (
               <button
                 className="language-option"
                 key={language.id}
-                lang={language.id}
                 onClick={() => onSelect(language.id)}
                 type="button"
               >
-                {/* ONE SHAPE FOR ALL THREE. They had three different internal
-                    layouts -- EN put the code inline with the name, KO added a
-                    latin gloss beside it, MULTI stacked the code on its own
-                    line and slipped "Bilingual" between name and description --
-                    so the eye had to re-learn the row each time. Every option
-                    is now code, name, gloss, description, in that order, and a
-                    gloss that would repeat the name is simply absent. */}
-                <span className="language-code">{language.id.toUpperCase()}</span>
-                <span className="language-name">
-                  <strong lang={language.id}>{language.nativeLabel}</strong>
-                  {language.nativeLabel !== language.label && (
-                    <small>{language.label}</small>
-                  )}
-                </span>
-                <span className="language-description">{language.description}</span>
-                <ChevronRight size={17} aria-hidden="true" />
+                {language.label}
               </button>
             ))}
           </div>
-        ) : !unavailable ? (
-          <div className="language-loading" aria-live="polite">
-            <span className="language-loader" aria-hidden="true" />
-            <div>
-              <strong>Loading locally</strong>
-              <span>{selected?.description ?? "Connecting to the caption engine"}</span>
-            </div>
-          </div>
-        ) : null}
+        )}
 
         {error && <p className="language-error" role="alert">{error}</p>}
-        <footer className="language-gate-footer">
-          <span><i /> On-device processing</span>
-          <span>Language cannot change during capture</span>
-        </footer>
       </div>
     </section>
   );
@@ -1547,6 +1644,11 @@ function SettingsPanel({
           max="1"
           step="0.05"
           value={settings.captionScale}
+          /* WebKit has no range-progress pseudo-element, so the travelled
+             side of the track is a gradient stop the input carries itself. */
+          style={{
+            "--fill": `${((settings.captionScale - 0.6) / 0.4) * 100}%`,
+          } as CSSVars}
           onChange={(event) => setSettings({
             ...settings,
             captionScale: Number(event.target.value),
@@ -1563,6 +1665,9 @@ function SettingsPanel({
           max="1"
           step="0.05"
           value={settings.motionIntensity}
+          style={{
+            "--fill": `${settings.motionIntensity * 100}%`,
+          } as CSSVars}
           onChange={(event) => setSettings({
             ...settings,
             motionIntensity: Number(event.target.value),
@@ -1653,11 +1758,6 @@ function SettingsPanel({
         <span><Sparkles size={15} /> Enhanced motion</span>
         <i data-on={settings.enhancedMotion ? "true" : "false"} />
       </button>
-
-      <div className="settings-note">
-        <Check size={15} />
-        <p>These controls affect presentation only. Recognition and speaker evidence stay untouched.</p>
-      </div>
     </aside>
   );
 }
@@ -1791,7 +1891,10 @@ export function LiveStudio() {
     : fallbackColor;
   // The bearing is read inside `VoiceCompass` now -- the parent no longer
   // renders a number for it, so it no longer needs to know one.
-  const inputGood = level.status === "good";
+  // Held, not raw: the word alternated on 34% of frames. See
+  // `useSettledStatus`. The dB reading beside it stays live.
+  const settledStatus = useSettledStatus(String(level.status ?? "idle"));
+  const inputGood = settledStatus === "good";
   const studioStyle: CSSVars = {
     "--caption-scale": settings.captionScale,
     "--active-color": activeColor,
@@ -1873,7 +1976,7 @@ export function LiveStudio() {
           {activeLanguage && (
             <span className="language-pill">
               <Globe2 size={13} />
-              {activeLanguage.nativeLabel}
+              {activeLanguage.label}
             </span>
           )}
           <span className="session-clock">{elapsed}</span>
@@ -1932,13 +2035,12 @@ export function LiveStudio() {
           />
           {!stageParagraphs.length && (
             <div className="empty-stage">
-              <div className="empty-mark">
-                <AudioWaveform size={26} strokeWidth={1.5} />
-              </div>
-              <p>Ready for a voice</p>
-              <span>
-                {lastEventAt ? "Speech will appear here as it is understood." : model.bootStage}
-              </span>
+              {/* One glyph, one line (2026-09-06, at the user's direction --
+                  the circled plate and the "Speech will appear here" sub-line
+                  said nothing the empty stage does not). The line is the boot
+                  stage while models load, then "Ready for a voice". */}
+              <AudioWaveform size={30} strokeWidth={1.25} aria-hidden="true" />
+              <p>{lastEventAt ? "Ready for a voice" : model.bootStage}</p>
             </div>
           )}
         </div>
@@ -1992,7 +2094,7 @@ export function LiveStudio() {
               behind it. Read together they answer "is the microphone working"
               once instead of twice. */}
           <div className="level-line" data-good={inputGood ? "true" : "false"}>
-            <strong>{level.status ?? "idle"}</strong>
+            <strong>{settledStatus}</strong>
             <span>{number(level.rms_db, -72).toFixed(1)} dBFS</span>
           </div>
         </section>

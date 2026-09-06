@@ -24,6 +24,7 @@ pins, because guessing any of them wastes a demo.
 from __future__ import annotations
 
 import argparse
+import select
 import shlex
 import socket
 import subprocess
@@ -43,6 +44,11 @@ from autocwi.haptics import (                # noqa: E402
 
 SR = 16_000          # what the pipeline wants; the node resamples to it
 BLOCK = 1024         # ~64 ms, matching the Mac's capture cadence
+# Bound on a stalled uplink. Generous on purpose: a WiFi hiccup must not drop
+# the link (the capture queue growing is the designed response, and the Mac
+# reads it as a sequence gap), but a genuinely dead link still has to surface
+# instead of hanging until TCP exhausts its retransmits.
+SEND_TIMEOUT_S = 10.0
 
 
 # --------------------------------------------------------------------------
@@ -335,12 +341,20 @@ def cue_loop(conn: socket.socket, ring: MotorRing, stop: threading.Event,
              verbose: bool, mac_cues: bool) -> None:
     """Drain optional Mac cues without interfering with direct DoA control."""
     reader = na.FrameReader()
-    conn.settimeout(0.5)
+    # Do NOT settimeout() here. This is the SAME socket object the capture
+    # thread ships audio on, and a timeout is socket-wide, not per-call -- so
+    # a short one set here silently becomes sendall's budget and any brief
+    # uplink stall tears the link down as "link lost (timed out)". select()
+    # waits for readability without touching shared socket state.
     while not stop.is_set():
         try:
-            data = conn.recv(4096)
-        except socket.timeout:
+            ready, _, _ = select.select([conn], [], [], 0.5)
+        except OSError:
+            return
+        if not ready:
             continue
+        try:
+            data = conn.recv(4096)
         except OSError:
             return
         if not data:
@@ -386,6 +400,9 @@ def run(args) -> int:
             continue
 
         print("[node] connected")
+        # The 5 s connect budget must not carry into streaming: sendall is
+        # meant to wait out a stalled uplink, not raise and reconnect.
+        conn.settimeout(SEND_TIMEOUT_S)
         try:
             with conn:
                 conn.sendall(na.pack_hello(SR, BLOCK))

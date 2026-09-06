@@ -143,6 +143,12 @@ def build_parser() -> argparse.ArgumentParser:
                          "the adaptive gain that lifts quiet speech")
     lv.add_argument("--no-gain", dest="no_gain", action="store_true",
                     help="feed the recognizer the raw input level")
+    lv.add_argument("--direction-trust", dest="direction_trust", type=float,
+                    default=None, metavar="RATIO",
+                    help="0..1 direction-sensor share of speaker attribution "
+                         "(needs the mic array). 0 = voice only; higher trusts "
+                         "the array's bearing more when it and the voice "
+                         "embedding disagree")
     # --- hardware node (ReSpeaker array + Pi + haptics) --------------------
     # The array plugs into the Pi, which cannot host the recognizers, so audio
     # and direction arrive over the network and haptic cues go back.

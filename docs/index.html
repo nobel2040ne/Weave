@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -47,7 +47,8 @@
   --glyph-baseline-em: .38em;
 
   --font-ui: "SF Pro Display", "SF Pro Text", -apple-system,
-             BlinkMacSystemFont, system-ui, sans-serif;
+             BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", Pretendard,
+             "Noto Sans KR", "Malgun Gothic", sans-serif;
   --font-caption: "Roboto Flex", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
 
@@ -73,7 +74,9 @@
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; scroll-padding-top: var(--nav-h); }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
 
 body {
   margin: 0; background: var(--canvas); color: var(--ink);
@@ -134,9 +137,33 @@ code {
 .t-light .box, .t-parchment .box { box-shadow: rgba(0, 0, 0, .22) 3px 5px 30px; }
 .t-dark .box, .t-dark-2 .box, .t-dark-3 .box, .t-black .box { border: 1px solid rgba(255,255,255,.12); }
 .box-foot { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 30px; flex-wrap: wrap; }
-.box-note { margin: 0; font-size: 14px; line-height: 1.43; letter-spacing: -.224px; color: var(--on-dark-muted); max-width: 52ch; }
+.box-note { margin: 0; font-size: 14px; line-height: 1.43; letter-spacing: -.224px; color: var(--on-dark-muted); }
 .box-note b { color: var(--on-dark); font-weight: 600; }
 .box-note i { font-style: italic; }
+/* 수식. 박스가 검으므로 KaTeX 의 색을 넘겨받지 않게 직접 지정한다. */
+.box-math {
+  margin: 26px 0 0; overflow-x: auto; color: var(--on-dark);
+  font-size: 15px; line-height: 1.2;
+}
+.box-math .katex { color: var(--on-dark); }
+.box-syms {
+  margin: 22px 0 0; display: grid; grid-template-columns: max-content 1fr;
+  gap: 9px 20px; align-items: baseline;
+  font-size: 14px; line-height: 1.5; letter-spacing: -.224px;
+  color: var(--on-dark-muted);
+}
+.box-syms dt { color: var(--on-dark); justify-self: end; }
+.box-syms dd { margin: 0; }
+/* 수식이 무엇을 하는지 한 문장. 수식 바로 아래에 붙는다. */
+.box-gloss {
+  margin: 16px 0 0; font-size: 14px; line-height: 1.55;
+  letter-spacing: -.224px; color: var(--on-dark-muted); max-width: 86ch;
+}
+.box-syms .katex { font-size: 1.02em; }
+@media (max-width: 620px) { .box-syms { grid-template-columns: 1fr; gap: 2px 0; }
+  .box-syms dt { justify-self: start; margin-top: 8px; } }
+.box-math > :not(.katex-display) { font-family: var(--mono); font-size: 13px;
+  color: var(--on-dark-muted); }
 
 .line {
   font-family: var(--font-caption);
@@ -416,7 +443,6 @@ figure { margin: 36px 0 0; }
 }
 .t-light .plate.shot, .t-parchment .plate.shot { box-shadow: rgba(0, 0, 0, .22) 3px 5px 30px; }
 .blockfig { display: block; width: 100%; height: auto; min-width: 720px; }
-.fig-wide { width: min(1240px, 94vw); margin-left: calc(50% - min(620px, 47vw)); }
 .blockfig text { font-family: var(--font-ui); fill: #0B0B0B; }
 .blockfig .bt { font-size: 15px; font-weight: 600; text-anchor: middle; letter-spacing: -.2px; }
 .blockfig .bs { font-size: 12.5px; text-anchor: middle; fill: #333333; }
@@ -437,7 +463,7 @@ figure { margin: 36px 0 0; }
 .blockfig .grid { stroke: #F2F2F5; fill: none; }
 .blockfig .brace { stroke: #C8C8CE; fill: none; }
 /* The data marks. `wash-*` is "and onwards", `tick-*` is the moment itself;
-   provisional carries a hatch so the state is never colour alone. */
+   provisional carries a hatch so the state is never color alone. */
 .blockfig .spoken { fill: #0B0B0B; }
 .blockfig .wash-s { fill: url(#fade); }
 .blockfig .tick-s { fill: #0066CC; }
@@ -455,7 +481,7 @@ figure { margin: 36px 0 0; }
 .t-dark .plate, .t-dark-2 .plate, .t-dark-3 .plate, .t-black .plate {
   background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.12);
 }
-figcaption { margin: 20px 0 0; max-width: 62ch; font-size: 14px; line-height: 1.43; letter-spacing: -.224px; color: var(--fg-2); }
+figcaption { margin: 20px 0 0; font-size: 14px; line-height: 1.43; letter-spacing: -.224px; color: var(--fg-2); }
 figcaption b { color: var(--fg); font-weight: 600; }
 figcaption i { font-style: italic; }
 
@@ -485,7 +511,89 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
 .foot { background: var(--parchment); }
 .foot .inner { padding: 56px 22px; }
 .foot p { margin: 0; font-size: 12px; line-height: 1.5; letter-spacing: -.12px; color: var(--ink-48); }
+
+/* The language switch. Chrome, so it follows the nav's own grammar exactly:
+   nav-link type, color-only selected state, nothing else. */
+.lang { display: flex; align-items: center; flex: 0 0 auto; margin-left: 10px; }
+.lang-btn {
+  border: 0; background: none; cursor: pointer; padding: 0 7px;
+  font-family: var(--font-ui); font-size: 12px; font-weight: 400;
+  letter-spacing: -.12px; line-height: var(--nav-h);
+  color: var(--on-dark-muted);
+}
+.lang-btn[aria-pressed="true"] { color: var(--on-dark); }
+.lang-btn:focus-visible { outline: 2px solid var(--action-focus); outline-offset: -4px; }
+.lang-sep { color: rgba(255,255,255,.3); font-size: 12px; line-height: var(--nav-h); }
+
+/* The poster view. One screen, no scroll: the sheet is laid out at a fixed
+   1560px and then scaled down to whatever the viewport can give it, so the
+   composition is the same on a booth monitor and on a laptop. The motion
+   boxes and the two figures are MOVED here, never cloned -- the language pass
+   holds element references taken at load, and a clone would never translate. */
+.poster-btn {
+  border: 0; background: none; cursor: pointer; padding: 0 7px; margin-left: 4px;
+  font-family: var(--font-ui); font-size: 12px; font-weight: 400;
+  letter-spacing: -.12px; line-height: var(--nav-h); color: var(--on-dark-muted);
+}
+.poster-btn[aria-pressed="true"] { color: var(--on-dark); }
+.poster-btn:focus-visible { outline: 2px solid var(--action-focus); outline-offset: -4px; }
+
+html[data-view="poster"] { overflow: hidden; }
+html[data-view="poster"] .nav { display: none; }
+
+#poster { position: fixed; inset: 0; z-index: 50; overflow: hidden; }
+#poster-fit { position: absolute; top: 0; left: 0;
+              transform-origin: top left; }   /* width is solved at runtime */
+#poster-sheet { padding: 34px 40px 40px; }
+#poster figcaption { display: none; }
+#poster-boxes { display: grid; grid-template-columns: repeat(4, 1fr);
+                grid-auto-rows: 4px; grid-auto-flow: row dense;
+                column-gap: 14px; row-gap: 0; align-items: start; }
+#poster-boxes > * { margin: 0 0 14px; break-inside: auto; }
+#poster-boxes > figure:first-child { grid-column: span 2; }
+
+/* The nav is gone in poster view, so language and exit live in the corner.
+   `.lang` keeps them out of the translation pass, as in the nav itself. */
+.poster-ctl { position: fixed; top: 0; right: 14px; z-index: 70; margin: 0;
+              opacity: .22; transition: opacity .18s ease; }
+.poster-ctl:hover, .poster-ctl:focus-within { opacity: 1; }
+
+
+/* The page's own type is sized for a scrolling column; a poster cell is a
+   quarter of that width, so every step down is set here rather than scaled. */
+#poster figure { margin: 0; }
+#poster .plate { padding: 18px 16px; border-radius: 14px; }
+#poster .blockfig { min-width: 0; }
+#poster .box { margin-top: 0; padding: 24px 22px; border-radius: 14px; }
+#poster .line { font-size: 26px; row-gap: .1em; }
+#poster .box-math { margin-top: 16px; font-size: 15px; overflow: hidden; }
+#poster .box-gloss { margin-top: 12px; font-size: 13px; line-height: 1.5; }
+#poster .box-syms { display: none; }
+#poster .box-foot { margin-top: 14px; }
+#poster .box-note { font-size: 13px; line-height: 1.4; }
+
+/* Korean text. Two things carry most of the legibility: `keep-all`, so a line
+   breaks between 어절 rather than inside one, and dropping the negative
+   tracking, which is a Latin habit that cramps Hangul. Leading goes up and
+   body weight goes 300 -> 400, because Hangul at 300 thins out badly.
+   NOTHING here may reach `.line` — the caption demos stay English and CWI
+   owns every value inside them. */
+[data-lang="ko"] .eyebrow, [data-lang="ko"] h2, [data-lang="ko"] .sub-h,
+[data-lang="ko"] .lead, [data-lang="ko"] p, [data-lang="ko"] th,
+[data-lang="ko"] td, [data-lang="ko"] figcaption, [data-lang="ko"] dt,
+[data-lang="ko"] dd, [data-lang="ko"] .chapters a, [data-lang="ko"] .btn,
+[data-lang="ko"] .blockfig text {
+  letter-spacing: 0; word-break: keep-all; overflow-wrap: break-word;
+}
+[data-lang="ko"] h2 { line-height: 1.3; }
+[data-lang="ko"] .lead { line-height: 1.45; }
+[data-lang="ko"] p { font-weight: 400; line-height: 1.62; }
+[data-lang="ko"] .box-note, [data-lang="ko"] figcaption { line-height: 1.62; }
+[data-lang="ko"] th, [data-lang="ko"] td { line-height: 1.62; }
+[data-lang="ko"] .stats dd small { line-height: 1.45; }
 </style>
+<link rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 </head>
 <body>
 
@@ -494,14 +602,18 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
     <div class="brand">Weave</div>
     <div class="chapters" id="chapters">
       <a href="#what">What</a>
-      <a href="#pillars">Pillars</a>
       <a href="#pipeline">Pipeline</a>
       <a href="#internals">Internals</a>
-      <a href="#playhead">Playhead</a>
+      <a href="#playhead">Constraints</a>
       <a href="#motion">Motion</a>
       <a href="#studio">Studio</a>
-      <a href="#limits">Limits</a>
     </div>
+    <div class="lang" role="group" aria-label="Language">
+      <button type="button" class="lang-btn" data-set-lang="en" aria-pressed="true">EN</button>
+      <span class="lang-sep" aria-hidden="true">/</span>
+      <button type="button" class="lang-btn" data-set-lang="ko" aria-pressed="false">KO</button>
+    </div>
+    <button type="button" class="poster-btn" id="poster-btn" aria-pressed="false">Poster</button>
   </div>
 </nav>
 
@@ -520,33 +632,27 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
       </h1>
     <p class="lead">
       Weave automates the Caption with Intention design system: a microphone
-      streams into captions that carry the speaker in colour, the moment in
+      streams into captions that carry the speaker in color, the moment in
       motion, and the voice in typography — entirely offline.
     </p>
-    <p class="muted">
-      The headline above is itself a caption, and so is every demo on this page.
-    </p>
-    <p><button class="btn" data-target="hero">Replay</button></p>
 
     <dl class="stats">
       <div><dt>Runs</dt><dd>Local<small>no cloud, no telemetry</small></dd></div>
       <div><dt>Languages</dt><dd>EN · KO<small>chosen before capture</small></dd></div>
       <div><dt>Read-ahead</dt><dd>1.75 s<small>plus a 420 ms floor</small></dd></div>
-      <div><dt>Speakers</dt><dd>12<small>CI colours, evidence-gated</small></dd></div>
+      <div><dt>Speakers</dt><dd>12<small>CI colors</small></dd></div>
     </dl>
   </div>
 </header>
 
 <section class="tile t-light" id="what">
   <div class="inner">
-    <p class="eyebrow">What it is</p>
-    <h2>What a caption carries beyond the words.</h2>
+    <h2>What it is</h2>
     <p>
       A subtitle keeps the words and discards the rest.
       <strong>Caption with Intention</strong>, from the Chicago Hearing Society,
-      restores three: speaker as colour, timing as motion, delivery as
-      typography — derived <strong>live</strong>, from a microphone, without
-      transmitting audio.
+      restores three: speaker as color, timing as motion, delivery as
+      typography — derived <strong>live</strong>, from a microphone.
     </p>
 
     <div class="box">
@@ -561,80 +667,18 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
       </div>
       <div class="box-foot">
         <p class="box-note">
-          <b>Three pillars in one line.</b> Colour is who, the cue is when,
-          size is how loud.
+          Color is who, the cue is when, size is how loud.
         </p>
-        <button class="btn" data-target="d0">Replay</button>
       </div>
-    </div>
-  </div>
-</section>
-
-<section class="tile t-parchment" id="pillars">
-  <div class="inner">
-    <p class="eyebrow">The three pillars</p>
-    <h2>Three properties of speech that the words alone do not carry.</h2>
-
-    <div class="scroll">
-      <table>
-        <thead><tr><th>Pillar</th><th>Question</th><th>Carried by</th><th>And so</th></tr></thead>
-        <tbody>
-          <tr>
-            <td>Attribution</td><td>who is speaking</td><td>one colour per speaker</td>
-            <td>grey when undecided — a wrong colour is a false claim about who spoke</td>
-          </tr>
-          <tr>
-            <td>Synchronization</td><td>when each word is spoken</td><td>the colour turn, plus a 15% pop</td>
-            <td>the eye is pointed at a word it has already read</td>
-          </tr>
-          <tr>
-            <td>Intonation</td><td>how it was said</td><td>a variable font: size, weight, width</td>
-            <td>a settled caption never shakes again</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="scroll">
-      <table>
-        <thead><tr><th colspan="4">The palette — CWI 2.1.1, by order of first appearance</th></tr></thead>
-        <tbody>
-          <tr>
-            <td><span class="sw" style="background:var(--y)"></span>S1</td><td class="num">#E5E517</td>
-            <td><span class="sw" style="background:var(--p)"></span>S4</td><td class="num">#E517E5</td>
-          </tr>
-          <tr>
-            <td><span class="sw" style="background:var(--g)"></span>S2</td><td class="num">#17E517</td>
-            <td><span class="sw" style="background:var(--r)"></span>S5</td><td class="num">#E51717</td>
-          </tr>
-          <tr>
-            <td><span class="sw" style="background:var(--b)"></span>S3</td><td class="num">#17E5E5</td>
-            <td><span class="sw" style="background:var(--o)"></span>S6</td><td class="num">#E58017</td>
-          </tr>
-          <tr>
-            <td><span class="sw" style="background:linear-gradient(90deg,#E85C2E,#5EEDC9,#CC6BED)"></span>S7+</td>
-            <td>twelve supporting hues</td>
-            <td><span class="sw" style="background:var(--unknown)"></span>—</td>
-            <td>unknown, and a state of its own</td>
-          </tr>
-        </tbody>
-      </table>
     </div>
   </div>
 </section>
 
 <section class="tile t-dark" id="pipeline">
   <div class="inner">
-    <p class="eyebrow">The pipeline</p>
-    <h2>From capture to glyph, entirely on the local machine.</h2>
-    <p class="muted">
-      Language is chosen <strong>before</strong> capture and locked. Everything
-      runs on the local CPU; the only network is a one-time model download and
-      the LAN link to the node.
-    </p>
-
+    <h2>The pipeline</h2>
     <figure>
-      <div class="plate sheet fig-wide">
+      <div class="plate sheet">
         <img src="figure/fig1.png" width="2600" height="1003" loading="lazy"
              alt="The live path. Inside the wearable, four microphones feed echo
                   cancellation, beamforming and direction of arrival on a
@@ -670,46 +714,20 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
       </div>
       <figcaption>
         <b>Figure 2.</b> The wearable, drawn from the outer wall of its own
-        print toolpath. The two cylinders are the left and right motor pods —
-        <b>one motor cannot encode direction</b>.
+        print toolpath. The two cylinders are the left and right motor pods.
       </figcaption>
     </figure>
 
-    <div class="scroll">
-      <table>
-        <thead><tr><th>Constraint</th><th>Reason</th></tr></thead>
-        <tbody>
-          <tr>
-            <td>Gain is applied to the recognizer's copy only</td>
-            <td>Prosody measures loudness from the captured signal; gaining it first maps a whisper and a shout to the same type size.</td>
-          </tr>
-          <tr>
-            <td>Word onsets are never synthesised</td>
-            <td>Prosody, the motion clock and the read-ahead floor all key off per-word start and end times, so a recognizer without them can supply text at the verifier boundary and nowhere else.</td>
-          </tr>
-          <tr>
-            <td>Utterances are reconciled, not rebuilt</td>
-            <td>Streaming and verified transcripts mismatch on nearly every utterance. Rebuilding the block would flash the sentence at every pause, so matches are corrected in place and insertions added at their spoken position.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
   </div>
 </section>
 
 <section class="tile t-light" id="internals">
   <div class="inner">
-    <p class="eyebrow">Internals</p>
-    <h2>One process decides, one stream carries, one reducer draws.</h2>
-    <p>
-      Python decides and the browser draws. What crosses between them is a
-      stream of word events, and the renderer is a pure function of it.
-    </p>
-
+    <h2>Internals</h2>
     <figure>
-      <div class="plate sheet fig-wide">
-        <svg class="blockfig" viewBox="0 0 1040 541" role="img"
-             aria-label="A time axis from the moment a word is spoken to five seconds later, showing when each part of it becomes known. The word itself is about 280 milliseconds of speech. Its text, start and end, and its loudness, pitch and voiced fraction all arrive at a median 0.62 seconds, together with a speaker that is still provisional or null. Endpoint verification revises the text somewhere in a window between 1.1 and 3.2 seconds. A durable speaker decision lands at a median 4.48 seconds. The playhead stands at 1.75 seconds: the word turns colour there, while its speaker is still provisional and nearly three seconds before the durable decision, and the gap from arrival to turn is the read-ahead, never less than 420 milliseconds. Haptics run on two lanes: the Pi pulses from the array's own bearing at once, while the Mac's opt-in cue waits for the durable word.">
+      <div class="plate sheet">
+        <svg class="blockfig" viewBox="0 0 1040 384" role="img"
+             aria-label="A time axis from the moment a word is spoken to five seconds later. The sound itself is about 280 milliseconds. Its text and prosody arrive at a median 0.62 seconds. The speaker is provisional from 0.62 seconds and durable only at 4.48 seconds. Verified text lands somewhere between 1.1 and 3.2 seconds. The playhead stands at 1.75 seconds: the word turns color there, while its speaker is still provisional.">
           <defs>
             <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse"
                      patternTransform="rotate(45)">
@@ -721,9 +739,10 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
               <stop offset="1" stop-color="#AFD2F0" stop-opacity="0"/>
             </linearGradient>
           </defs>
-          <text class="pt" x="6" y="44">One word, from the air to the colour turn</text>
+          <text class="pt" x="6" y="44">One word, from the air to the color turn</text>
           <text class="mn end" x="1034" y="44">medians over a live session</text>
           <path class="rule" d="M6,58 L1034,58"/>
+
           <path class="axis" d="M278,118 L1002,118"/>
           <path class="axis" d="M278.0,118 L278.0,122"/>
           <text class="ax" x="278.0" y="109">0</text>
@@ -738,134 +757,123 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
           <path class="axis" d="M936.2,118 L936.2,122"/>
           <text class="ax" x="936.2" y="109">5 s</text>
           <text class="ax end" x="262" y="109">the word is spoken</text>
+          <path class="grid" d="M409.6,122 L409.6,326"/>
+          <path class="grid" d="M541.3,122 L541.3,326"/>
+          <path class="grid" d="M672.9,122 L672.9,326"/>
+          <path class="grid" d="M804.5,122 L804.5,326"/>
+          <path class="grid" d="M936.2,122 L936.2,326"/>
+
           <path class="brace" d="M359.6,140 L359.6,132 L508.4,132 L508.4,140"/>
-          <text class="annc" x="434.0" y="156">read-ahead ≥ 420 ms</text>
-          <path class="grid" d="M409.6,122 L409.6,442"/>
-          <path class="grid" d="M541.3,122 L541.3,442"/>
-          <path class="grid" d="M672.9,122 L672.9,442"/>
-          <path class="grid" d="M804.5,122 L804.5,442"/>
-          <path class="grid" d="M936.2,122 L936.2,442"/>
-          <text class="rl end" x="262" y="191">in the air</text>
-          <text class="mn end" x="262" y="205">audio.py · InputGain</text>
+          <text class="annc" x="434.0" y="156">read-ahead &#8805; 420 ms</text>
+
+          <text class="rl end" x="262" y="195">sound</text>
           <g><title>about 280 ms of speech</title><rect class="spoken" x="278.0" y="180" width="36.9" height="22" rx="3"/></g>
-          <text class="ann" x="324.9" y="195">≈280 ms of speech</text>
-          <text class="rl end" x="262" y="231">text · start · end</text>
-          <text class="mn end" x="262" y="245">asr.py</text>
-          <g><title>text · start · end — known from 0.62 s</title><rect class="wash-s" x="359.6" y="220" width="642.4" height="22" rx="3"/></g>
+          <text class="ann" x="324.9" y="195">&#8776;280 ms</text>
+
+          <text class="rl end" x="262" y="235">text and prosody</text>
+          <g><title>text and prosody &#8212; known from 0.62 s</title><rect class="wash-s" x="359.6" y="220" width="642.4" height="22" rx="3"/></g>
           <rect class="tick-s" x="359.6" y="220" width="3" height="22"/>
           <text class="annk" x="370.6" y="235">0.62 s</text>
-          <text class="rl end" x="262" y="271">loudness · pitch · voiced_frac</text>
-          <text class="mn end" x="262" y="285">prosody.py</text>
-          <g><title>loudness · pitch · voiced_frac — known from 0.62 s</title><rect class="wash-s" x="359.6" y="260" width="642.4" height="22" rx="3"/></g>
-          <rect class="tick-s" x="359.6" y="260" width="3" height="22"/>
-          <text class="annk" x="370.6" y="275">0.62 s</text>
-          <text class="rl end" x="262" y="311">speaker — provisional, or null</text>
-          <text class="mn end" x="262" y="325">sortformer.py</text>
-          <g><title>speaker — provisional, or null — known from 0.62 s</title><rect class="wash-p" x="359.6" y="300" width="508.1" height="22" rx="3"/></g>
-          <rect class="tick-p" x="359.6" y="300" width="3" height="22"/>
-          <rect class="tick-p" x="864.7" y="300" width="3" height="22"/>
-          <text class="annk" x="370.6" y="315">0.62 s</text>
-          <text class="ann end" x="857.7" y="315">until the evidence decides</text>
-          <text class="rl end" x="262" y="351">text, verified</text>
-          <text class="mn end" x="262" y="365">EndpointVerifier</text>
-          <path class="whisk" d="M422.8,351.0 L699.2,351.0"/>
-          <path class="whisk" d="M422.8,343 L422.8,359"/>
-          <path class="whisk" d="M699.2,343 L699.2,359"/>
-          <text class="annc" x="561.0" y="337">1.1 – 3.2 s</text>
-          <g><title>verified text — by 3.2 s at the latest</title><rect class="wash-s" x="699.2" y="340" width="302.8" height="22" rx="3"/></g>
-          <rect class="tick-s" x="699.2" y="340" width="3" height="22"/>
-          <text class="rl end" x="262" y="391">speaker, durable</text>
-          <text class="mn end" x="262" y="405">SpeakerTracker</text>
-          <g><title>speaker, durable — known from 4.48 s</title><rect class="wash-s" x="867.7" y="380" width="134.3" height="22" rx="3"/></g>
-          <rect class="tick-s" x="867.7" y="380" width="3" height="22"/>
-          <text class="annk" x="878.7" y="395">4.48 s</text>
-          <text class="rl end" x="262" y="431">a cue to the motors</text>
-          <text class="mn end" x="262" y="445">haptics.py · weave_node.py</text>
-          <path class="markf" d="M278.0,442 L286.0,422 L270.0,422 z"/>
-          <text class="ann" x="292.0" y="435">the Pi pulses from the array's own bearing, at once</text>
-          <path class="marko" d="M561.0,442 L569.0,422 L553.0,422 z"/>
-          <text class="ann" x="575.0" y="435">the Mac's cue waits for the durable word — opt-in</text>
-          <path class="playhead" d="M508.4,114 L508.4,424"/>
+
+          <text class="rl end" x="262" y="275">speaker</text>
+          <g><title>speaker &#8212; provisional from 0.62 s, durable at 4.48 s</title><rect class="wash-p" x="359.6" y="260" width="508.1" height="22" rx="3"/></g>
+          <rect class="wash-s" x="867.7" y="260" width="134.3" height="22" rx="3"/>
+          <rect class="tick-p" x="359.6" y="260" width="3" height="22"/>
+          <rect class="tick-s" x="867.7" y="260" width="3" height="22"/>
+          <text class="annk" x="878.7" y="275">4.48 s</text>
+
+          <text class="rl end" x="262" y="315">verified text</text>
+          <text class="annc" x="561.0" y="301">1.1 &#8211; 3.2 s</text>
+          <path class="whisk" d="M422.8,315.0 L699.2,315.0"/>
+          <path class="whisk" d="M422.8,307 L422.8,323"/>
+          <path class="whisk" d="M699.2,307 L699.2,323"/>
+          <g><title>verified text &#8212; by 3.2 s at the latest</title><rect class="wash-s" x="699.2" y="304" width="302.8" height="22" rx="3"/></g>
+          <rect class="tick-s" x="699.2" y="304" width="3" height="22"/>
+
+          <path class="playhead" d="M508.4,114 L508.4,334"/>
           <path class="flag" d="M508.4,114 L514.4,105 L502.4,105 z"/>
-          <text class="phl" x="508.4" y="78">the playhead — 1.75 s</text>
+          <text class="phl" x="508.4" y="78">the playhead &#8212; 1.75 s</text>
           <text class="phl" x="508.4" y="92">the word turns here</text>
-          <rect class="wash-s" x="6" y="466" width="26" height="12" rx="3"/>
-          <rect class="tick-s" x="6" y="466" width="3" height="12"/>
-          <text class="key" x="40" y="476">known, and settled</text>
-          <rect class="wash-p" x="181.6" y="466" width="26" height="12" rx="3"/>
-          <rect class="tick-p" x="181.6" y="466" width="3" height="12"/>
-          <text class="key" x="215.60000000000002" y="476">known, but provisional</text>
-          <path class="whisk" d="M382.0,472 L408.0,472"/>
-          <path class="whisk" d="M382.0,466 L382.0,478"/>
-          <path class="whisk" d="M408.0,466 L408.0,478"/>
-          <text class="key" x="416.0" y="476">a window, not a moment — the value lands somewhere inside it</text>
-          <text class="foot" x="6" y="508">The turn is a fixed moment on the acoustic timeline, so it happens on time in whatever colour is known — attribution never gates it.</text>
-          <text class="foot" x="6" y="525">A word behind the playhead is frozen history; the gap between arrival and turn is the read-ahead, and a per-word floor holds it at 420 ms.</text>
+
+          <rect class="wash-s" x="6" y="346" width="26" height="12" rx="3"/>
+          <rect class="tick-s" x="6" y="346" width="3" height="12"/>
+          <text class="key" x="40" y="356">settled</text>
+          <rect class="wash-p" x="120" y="346" width="26" height="12" rx="3"/>
+          <rect class="tick-p" x="120" y="346" width="3" height="12"/>
+          <text class="key" x="154" y="356">provisional</text>
+          <text class="foot" x="6" y="378">The turn is a fixed moment on the acoustic timeline, so it happens on time in whatever color is known &#8212; attribution never gates it.</text>
         </svg>
       </div>
       <figcaption>
-        <b>Figure 3.</b> One word, from the air to its colour turn. Every stage on
-        the machine shows up here as the moment it fills something in &mdash; and the
-        turn lands at 1.75&nbsp;s, while the speaker is still provisional and nearly
-        three seconds before the durable decision.
+        <b>Figure 3.</b> One word, from the air to its color turn. The turn lands
+        at 1.75&nbsp;s, while the speaker is still provisional and nearly three seconds
+        before the durable decision.
       </figcaption>
     </figure>
 
     <div class="sub-h">The contract</div>
-    <p>
-      What those stages fill in is one versioned shape. A renderer &mdash; and the
-      haptic module &mdash; reads this and nothing else, so a stage can be replaced
-      without touching either.
-    </p>
-
     <figure>
       <div class="scroll">
         <table>
-          <thead><tr><th>Field</th><th>Holds</th><th>Filled by</th></tr></thead>
+          <thead><tr><th>Field</th><th>Holds</th></tr></thead>
           <tbody>
-            <tr><td><code>version</code></td><td>1.0 &mdash; every field marked <code>?</code> is additive, and only a breaking change bumps it</td><td>&mdash;</td></tr>
-            <tr><td><code>media</code></td><td><code>path</code> &middot; <code>duration</code> &middot; <code>fps?</code></td><td>the clip a spec was derived from</td></tr>
-            <tr><td><code>speakers</code></td><td><code>{ S1 … S12 → color }</code>, #RRGGBB from the CWI 2.1.1 palette by order of first appearance</td><td>the speaker tracker</td></tr>
-            <tr><td><code>mapping</code></td><td><code>loudness_to</code> &middot; <code>pitch_to</code> &middot; <code>speaker_to</code>, each an axis of <code>axis</code> &middot; <code>min</code> &middot; <code>max</code> &middot; <code>invert</code> &middot; <code>unit?</code> &middot; <code>domain_hz?</code> &middot; <code>baseline?</code></td><td><code>config.yaml</code></td></tr>
-            <tr><td><code>words[]</code> &mdash; what was said</td><td><code>text</code> &middot; <code>start</code> &middot; <code>end</code> &middot; <code>conf</code></td><td><code>asr.py</code>, revised by the verifier</td></tr>
-            <tr><td><code>words[]</code> &mdash; who said it</td><td><code>speaker</code> &middot; <code>speaker_status</code> &middot; <code>speaker_confidence</code> &middot; <code>speaker_change_probability</code> &middot; <code>speaker_revision_id</code> &middot; <code>overlap</code></td><td><code>sortformer.py</code>, <code>diarize.py</code></td></tr>
-            <tr><td><code>words[]</code> &mdash; how it was said</td><td><code>loudness</code> &middot; <code>pitch</code> normalised within the speaker, beside raw <code>loudness_db</code> &middot; <code>pitch_hz</code> &middot; <code>voiced_frac</code></td><td><code>prosody.py</code>, off the true signal</td></tr>
-            <tr><td><code>words[]</code> &mdash; how to set it</td><td><code>line_break</code> &middot; <code>tracking</code> &middot; <code>emphasis_measured</code> &middot; <code>emphasis_source</code></td><td>derived references only</td></tr>
-            <tr><td><code>words[]</code> &mdash; a measured curve</td><td><code>motion?</code> of <code>t0</code> &middot; <code>dt</code> &middot; <code>lift[]</code> &middot; <code>scale[]</code> &middot; <code>dwght[]</code>, replayed verbatim instead of modelled</td><td>the reference recordings</td></tr>
-            <tr><td><code>events[]</code></td><td><code>label</code> &middot; <code>category</code> (vocal | reaction | music | environmental) &middot; <code>start</code> &middot; <code>end</code> &middot; <code>conf</code> &middot; <code>source</code></td><td><code>soundevents.py</code></td></tr>
+            <tr><td><code>words[]</code> &mdash; what was said</td><td><code>text</code> &middot; <code>start</code> &middot; <code>end</code> &mdash; the word, and the moment it begins and ends</td></tr>
+            <tr><td><code>words[]</code> &mdash; who said it</td><td>the speaker, and whether that is settled or still a guess</td></tr>
+            <tr><td><code>words[]</code> &mdash; how it was said</td><td>loudness and pitch, each placed within that speaker&rsquo;s own range</td></tr>
+            <tr><td class="nt"><code>speakers</code></td><td>S1 … S12, each given a color from the palette below</td></tr>
           </tbody>
         </table>
       </div>
       <figcaption>
-        <b>Figure 4.</b> CaptionSpec 1.0 in full, from <code>schema.py</code>.
-        <code>start</code> and <code>end</code> are what everything else is keyed
-        to: prosody, the motion clock, the read-ahead floor and the haptic cue all
-        read them, which is why a recogniser that cannot supply them is no use here.
-        Per-stage intermediates &mdash; <code>WordTiming</code>,
-        <code>DiarSegment</code>, <code>ProsodyFeature</code> &mdash; live in the
-        same file and never reach a renderer.
+        <b>Figure 4.</b> What one word carries, from <code>schema.py</code>.
+        <code>start</code> and <code>end</code> are the pair everything else is
+        keyed to: prosody, the motion clock, the read-ahead floor and the haptic
+        cue all read them, which is why a recognizer that cannot supply them is
+        no use here.
       </figcaption>
     </figure>
 
+    <div class="scroll">
+      <table>
+        <thead><tr><th colspan="4">The palette — CWI 2.1.1, by order of first appearance</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sw" style="background:var(--y)"></span>S1</td><td class="num">#E5E517</td>
+            <td><span class="sw" style="background:var(--p)"></span>S4</td><td class="num">#E517E5</td>
+          </tr>
+          <tr>
+            <td><span class="sw" style="background:var(--g)"></span>S2</td><td class="num">#17E517</td>
+            <td><span class="sw" style="background:var(--r)"></span>S5</td><td class="num">#E51717</td>
+          </tr>
+          <tr>
+            <td><span class="sw" style="background:var(--b)"></span>S3</td><td class="num">#17E5E5</td>
+            <td><span class="sw" style="background:var(--o)"></span>S6</td><td class="num">#E58017</td>
+          </tr>
+          <tr>
+            <td><span class="sw" style="background:linear-gradient(90deg,#E85C2E,#5EEDC9,#CC6BED)"></span>S7+</td>
+            <td>twelve supporting hues</td>
+            <td><span class="sw" style="background:var(--unknown)"></span>—</td>
+            <td>unknown</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
     <div class="sub-h">The event stream</div>
     <p>
-      Eight kinds travel the stream, and the word is the one a renderer keeps. A
-      revised word is re-emitted under the same id, so consumers collapse by id
-      rather than count events.
+      Eight kinds of event travel the stream; these are the four a renderer acts
+      on. A corrected word comes back under the same id, so it replaces the old
+      one rather than adding to it.
     </p>
 
     <div class="scroll">
       <table>
-        <thead><tr><th>Event</th><th>Carries</th><th>Replayed to a late joiner</th></tr></thead>
+        <thead><tr><th>Event</th><th>Carries</th></tr></thead>
         <tbody>
-          <tr><td><code>word</code></td><td>text, span, speaker, loudness, pitch, and the salience flags the haptics read</td><td>yes, once final &mdash; and this is the one a renderer keeps</td></tr>
-          <tr><td><code>commit</code></td><td>a word leaving the revisable window</td><td>yes</td></tr>
-          <tr><td><code>verification</code></td><td>the endpoint verifier reconciling a finished phrase, word by word</td><td>yes</td></tr>
-          <tr><td><code>sound</code></td><td>a non-speech sound &mdash; laughter, applause, music, the room itself</td><td>yes, on its end</td></tr>
-          <tr><td><code>cue</code></td><td>a word entering the revisable window</td><td>no</td></tr>
-          <tr><td><code>hypothesis</code></td><td>the streaming recogniser&rsquo;s running guess at the phrase</td><td>only the newest is held</td></tr>
-          <tr><td><code>level</code></td><td>input level, noise floor, gain, and the bearing when an array supplies one</td><td>no</td></tr>
-          <tr><td><code>boot</code></td><td>which model is still loading, before capture is real</td><td>no</td></tr>
+          <tr><td class="nt"><code>word</code></td><td>text, span, speaker, loudness, pitch, and the salience flags the haptics read</td></tr>
+          <tr><td class="nt"><code>verification</code></td><td>a finished phrase, re-recognized and corrected word by word</td></tr>
+          <tr><td class="nt"><code>sound</code></td><td>a non-speech sound &mdash; laughter, applause, music, the room itself</td></tr>
+          <tr><td class="nt"><code>level</code></td><td>input level, noise floor, gain, and the bearing when an array supplies one</td></tr>
         </tbody>
       </table>
     </div>
@@ -875,32 +883,36 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
 
 <section class="tile t-parchment" id="playhead">
   <div class="inner">
-    <p class="eyebrow">The playhead</p>
-    <h2>What makes this a CWI renderer rather than a subtitle track.</h2>
+    <h2>Constraints</h2>
     <p>
       CWI needs the line on screen <em>before</em> it is spoken, and a live
-      recogniser cannot produce text early. So captions present from a clock
-      running <strong>behind</strong> the acoustic one. Nothing is predicted.
+      recognizer cannot produce text early. So captions present from a clock
+      running <strong>behind</strong> the acoustic one.
     </p>
 
     <div class="scroll">
       <table>
-        <thead><tr><th>Rule</th><th>Figure</th><th>Why it is not the obvious thing</th></tr></thead>
+        <thead><tr><th>Rule</th><th>Figure</th><th>Explanation</th></tr></thead>
         <tbody>
           <tr>
             <td>The playhead trails the acoustic clock</td>
             <td class="num">1.75 s</td>
-            <td>Colouring only up to the present minus the delay leaves recognised text ahead of the colour.</td>
+            <td>The color turn runs 1.75&nbsp;s behind the voice, so recognized words are on screen well before they are colored.</td>
           </tr>
           <tr>
             <td>Read-ahead is a per-word floor</td>
             <td class="num">420 ms</td>
-            <td>Words arrive in bursts, so a delay moves the mean lead without narrowing its spread. Only a per-word floor guarantees the margin.</td>
+            <td>Words arrive in bursts, so a fixed delay guarantees nothing. Every word gets at least 420&nbsp;ms on screen before its color turns.</td>
           </tr>
           <tr>
             <td>The turn is never gated on the speaker</td>
             <td class="num">—</td>
-            <td>Text arrives long before a durable speaker decision, so the turn happens on time in whatever colour is known.</td>
+            <td>Text arrives long before a durable speaker decision, so the turn happens on time in whatever color is known.</td>
+          </tr>
+          <tr>
+            <td>Gain is applied to the recognizer's copy only</td>
+            <td class="num">&mdash;</td>
+            <td>Loudness is measured from the original signal. Amplify it first and a whisper and a shout end up the same size.</td>
           </tr>
         </tbody>
       </table>
@@ -911,61 +923,10 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
 
 <section class="tile t-dark-3" id="motion">
   <div class="inner">
-    <p class="eyebrow">The motion channels</p>
-    <h2>What a word does when it is spoken.</h2>
-    <p class="muted">
-      One owner and one input per channel, all scheduled from a single animation
-      delay — no timer, no reveal queue. The design system names five; the
-      renderer runs eight.
-    </p>
+    <h2>Motion</h2>
+    
 
-    <div class="scroll">
-      <table>
-        <thead><tr><th>Channel</th><th>Driven by</th><th>Specified</th><th>Shipped</th></tr></thead>
-        <tbody>
-          <tr>
-            <td>Colour turn</td><td>the word's onset</td>
-            <td>read-ahead ink → speaker colour</td>
-            <td>as specified; wiped across the characters over 80 ms</td>
-          </tr>
-          <tr>
-            <td>Pop</td><td>nothing — constant</td>
-            <td class="num">1.00 → 1.15, every word</td>
-            <td class="num">1.00 → 1.076, emphasised words only</td>
-          </tr>
-          <tr>
-            <td>Crest</td><td>loudness</td>
-            <td class="num">3% → 12% of screen height</td>
-            <td class="num">1.00 → 1.425×, upward only</td>
-          </tr>
-          <tr>
-            <td>Weight</td><td>the speaker's median F0</td>
-            <td class="num">80 Hz heavy → 250 Hz light</td>
-            <td class="num">400 → 340…900; held at 400 on an unemphasised word</td>
-          </tr>
-          <tr>
-            <td>Width</td><td>harmonic content</td>
-            <td class="num">condensed → expanded</td>
-            <td class="num">82% → 124%</td>
-          </tr>
-          <tr>
-            <td>Hold lift</td><td>silence either side of the word</td>
-            <td>—</td>
-            <td class="num">0 → 0.525 em, gated on isolation</td>
-          </tr>
-          <tr>
-            <td>Word lift</td><td>nothing — constant</td>
-            <td>—</td>
-            <td class="num">0.16 em on every word</td>
-          </tr>
-          <tr>
-            <td>Character wave</td><td>the syllable, not the letter</td>
-            <td>syllable variation, "in certain instances"</td>
-            <td class="num">every word; each group takes its share of the 80 ms sweep</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    
 
     <div class="box">
       <div class="line" id="d1">
@@ -975,12 +936,17 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
         <span class="w turn" style="--d:1200ms;--sp:var(--y)"><span class="sizer">is</span><span class="glyph"><span class="ink"><span class="c" style="--ct:1200ms;--cw:600000ms;--char-tilt:0.00deg;--group-lift-em:0em">i</span><span class="c" style="--ct:1240ms;--cw:600000ms;--char-tilt:0.91deg;--group-lift-em:0em">s</span></span></span></span>
         <span class="w turn" style="--d:1600ms;--sp:var(--y)"><span class="sizer">spoken</span><span class="glyph"><span class="ink"><span class="c" style="--ct:1600ms;--cw:600000ms;--char-tilt:0.00deg;--group-lift-em:.155em">s</span><span class="c" style="--ct:1613ms;--cw:600000ms;--char-tilt:0.91deg;--group-lift-em:.155em">p</span><span class="c" style="--ct:1627ms;--cw:600000ms;--char-tilt:-1.35deg;--group-lift-em:.155em">o</span><span class="c" style="--ct:1640ms;--cw:600000ms;--char-tilt:1.07deg;--group-lift-em:.155em">k</span><span class="c" style="--ct:1653ms;--cw:600000ms;--char-tilt:-0.23deg;--group-lift-em:.155em">e</span><span class="c" style="--ct:1667ms;--cw:600000ms;--char-tilt:-0.73deg;--group-lift-em:.155em">n</span></span></span></span>
       </div>
+      <div class="box-math">$$\Delta t_i \;=\; \frac{i}{n-1}\cdot 80\ \mathrm{ms}$$</div>
+      <p class="box-gloss">The 80 ms is split evenly across the letters, so the color sweeps from the first to the last at a constant rate. The last letter turns exactly 80 ms after the first, however long the word is.</p>
+      <dl class="box-syms">
+        <dt>\(i\)</dt><dd>the letter's position in the word, counted from zero</dd>
+        <dt>\(n\)</dt><dd>how many letters the word has</dd>
+      </dl>
       <div class="box-foot">
         <p class="box-note">
-          <b>Colour turn.</b> Read-ahead ink until the spoken onset, then wiped
+          <b>Color turn.</b> Read-ahead ink until the spoken onset, then wiped
           across the letters rather than switched.
         </p>
-        <button class="btn" data-target="d1">Replay</button>
       </div>
     </div>
 
@@ -993,12 +959,17 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
         <span class="w gl ph hold" style="--d:1600ms;--sp:var(--y);--scale:1.24;--sync-pop:1.076"><span class="sizer">THIS</span><span class="glyph"><span class="ink"><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.00deg;--group-lift-em:0em">T</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.91deg;--group-lift-em:0em">H</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:-1.35deg;--group-lift-em:0em">I</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:1.07deg;--group-lift-em:0em">S</span></span></span></span>
         <span class="w gl" style="--d:2000ms;--sp:var(--y)"><span class="sizer">pops</span><span class="glyph"><span class="ink"><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.00deg;--group-lift-em:0em">p</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.91deg;--group-lift-em:0em">o</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:-1.35deg;--group-lift-em:0em">p</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:1.07deg;--group-lift-em:0em">s</span></span></span></span>
       </div>
+      <div class="box-math">$$s_{\mathrm{pop}} = 1 + 0.076\,\bigl(0.5 + 0.5\,e\bigr),\qquad e = \frac{s_{\mathrm{crest}}-1}{0.425}$$</div>
+      <p class="box-gloss">Half the pop is given to every word outright and the other half is earned by how much that word swelled. A word with no growth still moves 1.038×, and the most emphatic one reaches the full 1.076×.</p>
+      <dl class="box-syms">
+        <dt>\(s_{\mathrm{pop}}\)</dt><dd>the size the word reaches at the top of its pop</dd>
+        <dt>\(e\)</dt><dd>how far this word's crest sits up the reachable range, 0 at no growth and 1 at the largest the system allows</dd>
+      </dl>
       <div class="box-foot">
         <p class="box-note">
-          <b>Pop and lift.</b> One animation. An unemphasised word rises
-          <i>0.16 em</i> and does not grow; only an emphasised one also pops.
+          <b>Pop and lift.</b> One animation. Every word rises <i>0.16 em</i>
+          and every word grows, in proportion to its crest.
         </p>
-        <button class="btn" data-target="d2">Replay</button>
       </div>
     </div>
 
@@ -1008,12 +979,26 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
         <span class="w ph" style="--d:400ms;--sp:var(--y);--scale:1.2"><span class="sizer">or</span><span class="glyph"><span class="ink"><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.00deg;--group-lift-em:0em">o</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.91deg;--group-lift-em:0em">r</span></span></span></span>
         <span class="w ph hold" style="--d:800ms;--sp:var(--y);--scale:1.425;--char-wave:0.3"><span class="sizer">louder</span><span class="glyph"><span class="ink"><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.00deg;--group-lift-em:.155em">l</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.91deg;--group-lift-em:.155em">o</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:-1.35deg;--group-lift-em:.155em">u</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:1.07deg;--group-lift-em:.155em">d</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:-0.23deg;--group-lift-em:.155em">e</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:-0.73deg;--group-lift-em:.155em">r</span></span></span></span>
       </div>
+      <div class="box-math">$$s_{\mathrm{crest}} = 1 + \mathrm{PWL}(L),\qquad L = \operatorname{clip}\!\left(\frac{db - lo}{hi - lo} + E,\; 0,\; 1\right)$$$$E = 0.75\,\tau + 0.25\,\bar{\tau} + 20\log_{10}\frac{F_0}{\tilde{F_0}}$$</div>
+      <p class="box-gloss">The fraction places this word’s level between that speaker’s quiet and loud ends — 0 at one, 1 at the other — with emphasis added on top and clip holding the result inside them. PWL turns that into how much to grow: nothing at all below 0.21, and at most 0.425 above it.</p>
+      <dl class="box-syms">
+        <dt>\(s_{\mathrm{crest}}\)</dt><dd>the size the word swells to: 1.000 at no growth, 1.425 at the largest the system allows</dd>
+        <dt>\(L\)</dt><dd>loudness: where this word sits in that speaker's recent range, 0 to 1</dd>
+        <dt>\(db\)</dt><dd>the level of this word's own span, taken as the 90th percentile of its frame RMS in dB</dd>
+        <dt>\(lo,\ hi\)</dt><dd>the 10th and 95th percentile of that speaker's recent levels; the two are held at least 18 dB apart so a monotone passage is not stretched</dd>
+        <dt>\(E\)</dt><dd>emphasis, added on top of the level; only a score above 0.72 is added at all</dd>
+        <dt>\(\tau\)</dt><dd>spectral tilt: how hard the voice is pressed. It rises when someone speaks with force, even without getting louder</dd>
+        <dt>\(\bar{\tau}\)</dt><dd>the mean tilt of recent words, which keeps one loud word from setting the baseline by itself</dd>
+        <dt>\(F_0\)</dt><dd>the fundamental frequency of this word, that is its pitch</dd>
+        <dt>\(\tilde{F_0}\)</dt><dd>the median pitch that speaker has been producing lately</dd>
+        <dt>\(\mathrm{PWL}\)</dt><dd>a piecewise-linear curve fitted to the reference film, through six control points, topping out at 0.425</dd>
+        <dt>\(\operatorname{clip}\)</dt><dd>clips the value to the range that follows it; anything outside becomes the nearest end</dd>
+      </dl>
       <div class="box-foot">
         <p class="box-note">
           <b>Crest.</b> A real font-size, not a transform — and the row does not
           move. Upward only, to <i>1.425×</i>.
         </p>
-        <button class="btn" data-target="d3">Replay</button>
       </div>
     </div>
 
@@ -1026,12 +1011,23 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
         <span class="w ph" style="--d:400ms;--sp:var(--g);--wt:900"><span class="sizer">low</span><span class="glyph"><span class="ink"><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.00deg;--group-lift-em:0em">l</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.91deg;--group-lift-em:0em">o</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:-1.35deg;--group-lift-em:0em">w</span></span></span></span>
         <span class="w ph" style="--d:400ms;--sp:var(--g);--wt:900"><span class="sizer">one</span><span class="glyph"><span class="ink"><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.00deg;--group-lift-em:0em">o</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.91deg;--group-lift-em:0em">n</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:-1.35deg;--group-lift-em:0em">e</span></span></span></span>
       </div>
+      <div class="box-math">$$w = \operatorname{clip}\bigl(400 + r'\,\Delta_w + p,\; 340,\; 900\bigr)$$$$p = 460\,\operatorname{clip}\!\left(\frac{L - 0.222}{1 - 0.222},\; 0,\; 1\right)$$$$r' = \begin{cases} r, & r \ge 0 \\ r\,\bigl(1 - p/460\bigr), & r < 0\end{cases}$$</div>
+      <p class="box-gloss">Weight starts at the neutral 400 and is moved by two pushes that add: where the voice sits overall, and how loud this word is right now. Pitch alone cannot tell a habitually high voice from one that is shouting, which is why it is split in two. The clip keeps the result legible at caption size.</p>
+      <dl class="box-syms">
+        <dt>\(w\)</dt><dd>the rendered font weight, between 340 and 900</dd>
+        <dt>\(r\)</dt><dd>register: the speaker&rsquo;s median pitch mapped to −1…1 — +1 at 80 Hz and below, 0 right across the neutral 160–200 Hz band, −1 at 250 Hz and above</dd>
+        <dt>\(r'\)</dt><dd><code>r</code> reduced: the pull toward Light weakens as the word gets louder, and vanishes entirely at full <code>p</code>. A pressed voice is not an airy one</dd>
+        <dt>\(\Delta_w\)</dt><dd>how far there is to go from 400 to the end: 500 to reach 900 going heavier, only 60 to reach 340 going lighter</dd>
+        <dt>\(p\)</dt><dd>this word&rsquo;s own loudness, counted upward from ordinary speaking level only: 0 at or below it, adding at most 460 of weight at the loudest. It never subtracts</dd>
+        <dt>\(L\)</dt><dd>the same 0-to-1 loudness the crest reads; 0.222 is where ordinary speaking level sits on it</dd>
+        <dt>\(\operatorname{clip}\)</dt><dd>clips the value to the range that follows it; anything outside becomes the nearest end</dd>
+      </dl>
       <div class="box-foot">
         <p class="box-note">
-          <b>Weight.</b> Belongs to the voice, not the word: read per word, a
-          shout would set the lightest type on screen.
+          <b>Weight.</b> The speaker&rsquo;s habitual pitch sets where a word
+          starts &mdash; the lower the voice, the heavier &mdash; and a loud or
+          pressed word climbs from there. 340 to 900.
         </p>
-        <button class="btn" data-target="d4">Replay</button>
       </div>
     </div>
 
@@ -1044,12 +1040,20 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
         <span class="w ph" style="--d:400ms;--sp:var(--o);--wd:124%"><span class="sizer">and</span><span class="glyph"><span class="ink"><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.00deg;--group-lift-em:0em">a</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.91deg;--group-lift-em:0em">n</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:-1.35deg;--group-lift-em:0em">d</span></span></span></span>
         <span class="w ph" style="--d:400ms;--sp:var(--o);--wd:124%"><span class="sizer">warm</span><span class="glyph"><span class="ink"><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.00deg;--group-lift-em:0em">w</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.91deg;--group-lift-em:0em">a</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:-1.35deg;--group-lift-em:0em">r</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:1.07deg;--group-lift-em:0em">m</span></span></span></span>
       </div>
+      <div class="box-math">$$W = 100 + \operatorname{clip}\bigl(0.7\,t + 0.3\,h,\; -1,\; 1\bigr)\,\Delta_W,\qquad h = \operatorname{clip}\bigl(2(0.5 - \theta),\, -1,\, 1\bigr)$$</div>
+      <p class="box-gloss">Seven tenths of the width comes from the word&rsquo;s own pitch and three tenths from breathiness: the lower the pitch the wider, the breathier the voice the narrower. It never leaves 82 to 124 percent.</p>
+      <dl class="box-syms">
+        <dt>\(W\)</dt><dd>the rendered font width, in percent, between 82 and 124</dd>
+        <dt>\(t\)</dt><dd>the pitch of this word itself, not the speaker&rsquo;s median: +1 when low, −1 when high</dd>
+        <dt>\(\theta\)</dt><dd>how much air escapes with the voice. Whispering, or speaking on a sigh, leaves the folds open enough that the sound drifts from a steady vibration; that drift is seven tenths of the reading and how much high-frequency energy there is the other three</dd>
+        <dt>\(h\)</dt><dd>breathiness on a −1 to 1 scale: the more air in the voice, the closer to −1</dd>
+        <dt>\(\Delta_W\)</dt><dd>how far there is to go from the neutral 100% to the end of the range</dd>
+      </dl>
       <div class="box-foot">
         <p class="box-note">
-          <b>Width.</b> Low harmonics wider, high narrower. The quietest of the
-          eight channels.
+          <b>Width.</b> Driven by the word&rsquo;s own pitch, with a breathiness
+          reading blended in. The quietest of the eight channels.
         </p>
-        <button class="btn" data-target="d6">Replay</button>
       </div>
     </div>
 
@@ -1061,12 +1065,16 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
         <span class="w spring" style="--d:1200ms;--sp:var(--y);--hold-spring:1"><span class="sizer">is</span><span class="glyph"><span class="ink"><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.00deg;--group-lift-em:0em">i</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.91deg;--group-lift-em:0em">s</span></span></span></span>
         <span class="w" style="--d:1600ms;--sp:var(--y)"><span class="sizer">spoken</span><span class="glyph"><span class="ink"><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.00deg;--group-lift-em:.155em">s</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:0.91deg;--group-lift-em:.155em">p</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:-1.35deg;--group-lift-em:.155em">o</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:1.07deg;--group-lift-em:.155em">k</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:-0.23deg;--group-lift-em:.155em">e</span><span class="c" style="--ct:-600000ms;--cw:600000ms;--char-tilt:-0.73deg;--group-lift-em:.155em">n</span></span></span></span>
       </div>
+      <div class="box-math">$$\ell = 0.525\ \mathrm{em}$$</div>
+      <p class="box-gloss">A constant. The only decision this channel makes is whether it applies at all, and that depends on silence sitting on both sides of the word.</p>
+      <dl class="box-syms">
+        <dt>\(\ell\)</dt><dd>how far the word leaves the line, in em, when there is silence on both sides of it</dd>
+      </dl>
       <div class="box-foot">
         <p class="box-note">
           <b>Hold lift.</b> Silence either side lifts a word, and it lands on its
           turn. Isolation, not sustain.
         </p>
-        <button class="btn" data-target="d5">Replay</button>
       </div>
     </div>
 
@@ -1074,12 +1082,17 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
       <div class="line" id="dw">
         <span class="w wv" style="--d:0ms;--sp:var(--y)"><span class="sizer">animation</span><span class="glyph"><span class="ink"><span class="c" style="--ct:-600000ms;--cw:0ms;--char-tilt:0.00deg;--group-lift-em:.155em">a</span><span class="c" style="--ct:-600000ms;--cw:9ms;--char-tilt:0.91deg;--group-lift-em:.155em">n</span><span class="c" style="--ct:-600000ms;--cw:9ms;--char-tilt:-1.35deg;--group-lift-em:.155em">i</span><span class="c" style="--ct:-600000ms;--cw:27ms;--char-tilt:1.07deg;--group-lift-em:.155em">m</span><span class="c" style="--ct:-600000ms;--cw:27ms;--char-tilt:-0.23deg;--group-lift-em:.155em">a</span><span class="c" style="--ct:-600000ms;--cw:44ms;--char-tilt:-0.73deg;--group-lift-em:.155em">t</span><span class="c" style="--ct:-600000ms;--cw:44ms;--char-tilt:1.31deg;--group-lift-em:.155em">i</span><span class="c" style="--ct:-600000ms;--cw:44ms;--char-tilt:-1.19deg;--group-lift-em:.155em">o</span><span class="c" style="--ct:-600000ms;--cw:44ms;--char-tilt:0.45deg;--group-lift-em:.155em">n</span></span></span></span>
       </div>
+      <div class="box-math">$$\Delta t_g \;=\; \frac{g}{G-1}\cdot 80\ \mathrm{ms}$$</div>
+      <p class="box-gloss">The same 80 ms as the color turn, split across syllable groups instead of letters. A two-syllable word therefore takes two steps where a six-letter word would take six.</p>
+      <dl class="box-syms">
+        <dt>\(g\)</dt><dd>the syllable group's position in the word, counted from zero</dd>
+        <dt>\(G\)</dt><dd>how many syllable groups the word splits into</dd>
+      </dl>
       <div class="box-foot">
         <p class="box-note">
           <b>Character wave.</b> One syllable at a time — <i>se</i>+<i>en</i>,
           <i>but</i>+<i>ton</i>. Never one letter.
         </p>
-        <button class="btn" data-target="dw">Replay</button>
       </div>
     </div>
 
@@ -1098,11 +1111,9 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
       <div class="box-foot">
         <p class="box-note">
           <b>All of it, on one line.</b> Every channel together, on the studio&rsquo;s
-          own clocks — a swelling word <i>overlaps</i> its neighbours rather than
-          shoving them along. If this box and the stage disagree, the page has
-          drifted.
+          own clocks — a swelling word <i>overlaps</i> its neighbors rather than
+          shoving them along.
         </p>
-        <button class="btn" data-target="dall">Replay</button>
       </div>
     </div>
   </div>
@@ -1110,19 +1121,12 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
 
 <section class="tile t-parchment" id="studio">
   <div class="inner">
-    <p class="eyebrow">The studio</p>
-    <h2>Two design systems, and the boundary is the word.</h2>
-    <p>
-      The chrome follows Apple&rsquo;s design language; the captions follow CWI,
-      which outranks it. The line is literal: <strong>anything inside a caption
-      word is CWI, everything else is Apple.</strong>
-    </p>
-
+    <h2>The studio</h2>
     <figure>
       <div class="plate shot">
         <img src="figure/fig5.png" width="2067" height="1187" loading="lazy"
              alt="The studio running. A dark stage carries rolling captions,
-                  each word coloured by speaker and the newest line ruled off
+                  each word colored by speaker and the newest line ruled off
                   below the history; a right-hand rail shows the input level,
                   a compass ring with one arc per speaker and a needle on the
                   current bearing, and a live waveform.">
@@ -1132,49 +1136,6 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
         live line; each speaker holds an arc of the ring.
       </figcaption>
     </figure>
-
-    <p>
-      Speaker colour is the only colour that carries information, so everything
-      around it is achromatic — and a sound label sits inside the dial, because
-      a non-speech event has a direction too.
-    </p>
-  </div>
-</section>
-
-<section class="tile t-light" id="limits">
-  <div class="inner">
-    <p class="eyebrow">What it can't do</p>
-    <h2>Known limitations.</h2>
-
-    <div class="scroll">
-      <table>
-        <tbody>
-          <tr>
-            <td>Which word grows</td>
-            <td>Emphasis is derived from the acoustics, and the reference film&rsquo;s
-                own choices correlate <b>&minus;0.018</b> with ours. Shape, timing
-                and amplitude match; <i>which word</i> is a transcriber&rsquo;s
-                judgement and no rule recovers it.</td>
-          </tr>
-          <tr>
-            <td>First colour</td>
-            <td>Text lands at a median <b>0.62 s</b> and durable attribution at
-                <b>4.48 s</b>, so a word can turn before its speaker is known.
-                It turns grey rather than guessing.</td>
-          </tr>
-          <tr>
-            <td>Korean expression</td>
-            <td>Word motion measures the same as English, but the available
-                Korean face has no width axis, so §2.3.10 is silently dropped.</td>
-          </tr>
-          <tr>
-            <td>The motors</td>
-            <td>The mapping and wire protocol are tested offline. They have
-                never run against real hardware.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
   </div>
 </section>
 
@@ -1189,9 +1150,33 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
   </div>
 </footer>
 
+<div class="tile t-dark-3" id="poster" hidden>
+  <div class="lang poster-ctl" role="group" aria-label="Language">
+    <button type="button" class="lang-btn" data-set-lang="en" aria-pressed="true">EN</button>
+    <span class="lang-sep" aria-hidden="true">/</span>
+    <button type="button" class="lang-btn" data-set-lang="ko" aria-pressed="false">KO</button>
+    <button type="button" class="lang-btn" id="poster-close" aria-label="Close poster">&#10005;</button>
+  </div>
+  <div id="poster-fit">
+    <div id="poster-sheet">
+      <div id="poster-boxes"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 (function () {
   var lines = document.querySelectorAll(".line");
+  var still = window.matchMedia
+    ? window.matchMedia("(prefers-reduced-motion: reduce)")
+    : null;
+
+  // --ct and --cw park an animation 600000ms out when the word must not run
+  // it; those never play, so they must not decide how long a cycle is.
+  var PARKED_MS = 60000;
+  // A beat of stillness on the finished line before it runs again.
+  var TAIL_MS = 900;
+  var FALLBACK_MS = 4200;
 
   function run(line) {
     if (!line) return;
@@ -1200,25 +1185,59 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
     line.classList.add("play");
   }
 
-  document.querySelectorAll("[data-target]").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      run(document.getElementById(btn.getAttribute("data-target")));
-    });
-  });
+  // The choreography is the CSS: every delay, duration and stagger already
+  // lives there, so a cycle is wherever the last live animation ends. Read
+  // it back rather than restating any of those numbers here.
+  function cycleMs(line) {
+    var end = 0;
+    if (line.getAnimations) {
+      line.getAnimations({ subtree: true }).forEach(function (a) {
+        var t = a.effect && a.effect.getComputedTiming
+          ? a.effect.getComputedTiming()
+          : null;
+        if (!t || (t.delay || 0) >= PARKED_MS) return;
+        var at = t.endTime;
+        if (typeof at === "number" && isFinite(at) && at > end) end = at;
+      });
+    }
+    return (end > 0 ? end : FALLBACK_MS) + TAIL_MS;
+  }
+
+  function stop(line) {
+    if (!line) return;
+    line.weaveLooping = false;
+    if (line.weaveTimer) {
+      clearTimeout(line.weaveTimer);
+      line.weaveTimer = null;
+    }
+  }
+
+  function loop(line) {
+    if (!line.weaveLooping) return;
+    run(line);
+    // Reduced motion keeps the color turn, but does not want it on repeat.
+    if (still && still.matches) { line.weaveLooping = false; return; }
+    line.weaveTimer = setTimeout(function () { loop(line); }, cycleMs(line));
+  }
+
+  function start(line, delay) {
+    if (!line || line.weaveLooping) return;
+    line.weaveLooping = true;
+    line.weaveTimer = setTimeout(function () { loop(line); }, delay);
+  }
 
   if ("IntersectionObserver" in window) {
-    var seen = new WeakSet();
+    // Loops while any part of the line is on screen; a line scrolled fully
+    // away stops, so the demos are not animating behind the viewport.
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (e) {
-        if (e.isIntersecting && !seen.has(e.target)) {
-          seen.add(e.target);
-          setTimeout(function () { run(e.target); }, 160);
-        }
+        if (e.intersectionRatio >= 0.55) start(e.target, 160);
+        else if (!e.isIntersecting) stop(e.target);
       });
-    }, { threshold: 0.55 });
+    }, { threshold: [0, 0.55] });
     lines.forEach(function (l) { io.observe(l); });
   } else {
-    lines.forEach(run);
+    lines.forEach(function (l) { start(l, 160); });
   }
 
   var links = {};
@@ -1247,8 +1266,218 @@ td .sw { display: inline-block; width: 10px; height: 10px; border-radius: 5px; m
     }, { rootMargin: "-30% 0px -60% 0px" });
     sections.forEach(function (s) { spy.observe(s); });
   }
+
+  /* ---- language ------------------------------------------------------- *
+   * Keyed by the English text itself rather than by markup ids, so a key
+   * that stops matching shows up in `window.__i18nMisses` instead of
+   * silently rendering half a language.                                    */
+  var KO = {"0.62 s": "0.62초", "1 s": "1초", "1.0 — every field marked ? is additive, and only a breaking change bumps it": "1.0 — <code>?</code>가 붙은 필드는 추가해도 기존 것을 깨지 않는다. 기존 필드를 깨는 변경이 있을 때만 버전을 올린다", "1.1 – 3.2 s": "1.1 – 3.2초", "1.75 s": "1.75초", "1.75 splus a 420 ms floor": "1.75초<small>단어마다 최소 420 ms 보장</small>", "12CI colors": "12명<small>CI 팔레트</small>", "2 s": "2초", "3 s": "3초", "4 s": "4초", "4.48 s": "4.48초", "5 s": "5초", "A constant. The only decision this channel makes is whether it applies at all, and that depends on silence sitting on both sides of the word.": "상수다. 이 채널이 내리는 유일한 판단은 적용할지 말지이고, 그것은 단어 앞뒤에 침묵이 있는지로 정해진다.", "A subtitle keeps the words and discards the rest. Caption with Intention, from the Chicago Hearing Society, restores three: speaker as color, timing as motion, delivery as typography — derived live, from a microphone.": "자막은 보통 발화 내용만 남기고 나머지는 버린다. 누가, 언제, 어떻게 발화했는지는 사라진다. 시카고 청각협회가 만든 <strong>Caption with Intention</strong>은 이 셋을 되살린다. 화자는 색으로, 발화 시점은 모션으로, 발화 방식은 타이포그래피로 나타낸다. 셋 다 마이크 입력에서 <strong>실시간으로</strong> 계산한다.", "All of it, on one line. Every channel together, on the studio’s own clocks — a swelling word overlaps its neighbors rather than shoving them along.": "<b>All of it, on one line.</b> 여덟 채널이 스튜디오와 같은 타이밍으로 함께 움직인다. 커지는 단어는 옆 단어를 밀어내지 않고 겹친다.", "Background": "배경", "CWI needs the line on screen before it is spoken, and a live recognizer cannot produce text early. So captions present from a clock running behind the acoustic one.": "CWI는 어떤 문장이 발화되기 <strong>전에</strong> 그 문장이 화면에 있어야 한다. 그러나 실시간 음성 인식은 발화보다 먼저 글자를 만들 수 없다. 그래서 자막 전체를 소리보다 <strong>1.75초 늦게</strong> 내보낸다. 늦춘 만큼 새로 인식된 단어가 화면에 먼저 쌓이고, 색은 그 뒤에 바뀐다.", "Carries": "담는 것", "Channel implementation": "채널 구현", "Character wave. One syllable at a time — se+en, but+ton. Never one letter.": "<b>Character wave.</b> 한 번에 한 음절씩 움직인다. <i>se</i>+<i>en</i>, <i>but</i>+<i>ton</i>. 낱글자 하나씩은 움직이지 않는다.", "Color is who, the cue is when, size is how loud.": "색은 화자를, 색이 바뀌는 순간은 발화 시점을, 글자 크기는 음량을 나타낸다.", "Color turn. Read-ahead ink until the spoken onset, then wiped across the letters rather than switched.": "<b>Color turn.</b> 발화가 시작되기 전까지는 read-ahead 색으로 있다가, 발화 시작 시점에 화자 색으로 바뀐다. 단어 전체가 한 번에 바뀌지 않고, 글자를 앞에서부터 훑으며 바뀐다.", "Coloring only up to the present minus the delay leaves recognized text ahead of the color.": "지금 시각에서 지연만큼 뺀 지점까지만 색을 칠한다. 그러면 이미 인식된 글자가 색보다 앞에 남는다. 그 앞선 글자가 미리 읽을 거리가 된다.", "Constraints": "제약", "Crest. A real font-size, not a transform — and the row does not move. Upward only, to 1.425×.": "<b>Crest.</b> 글자 크기 값 자체를 키운다. 줄은 움직이지 않는다. 위로만 커지며, 최대 <i>1.425</i>배다.", "Data model": "데이터 모델", "Design constraints": "설계 제약", "EN · KOchosen before capture": "영어 · 한국어<small>녹음 전에 선택</small>", "Eight kinds of event travel the stream; these are the four a renderer acts on. A corrected word comes back under the same id, so it replaces the old one rather than adding to it.": "스트림에는 여덟 종류의 이벤트가 흐른다. 그중 렌더러가 실제로 쓰는 것은 아래 네 가지다. 수정된 단어는 같은 id로 다시 오므로, 새로 쌓이지 않고 이전 것을 대체한다.", "Eight kinds travel the stream, and the word is the one a renderer keeps. A revised word is re-emitted under the same id, so consumers collapse by id rather than count events.": "스트림에는 여덟 종류의 이벤트가 흐른다. 그중 렌더러가 보관하는 것은 단어 이벤트뿐이다. 단어가 수정되면 같은 id로 다시 보낸다. 그래서 받는 쪽은 이벤트 개수를 세지 않고 id 기준으로 합친다.", "Event": "이벤트", "Explanation": "설명", "Field": "필드", "Figure": "수치", "Figure 1. The live path. The motors are driven on the Pi, straight from the array’s own direction of arrival — a 100 ms pulse every 300 ms, gated on the board hearing speech. The salience cue from the computer is the dashed, optional path: it rides durable words, so it waits on the endpoint verifier, which measures 1.1–3.2 s.": "<b>그림 1.</b> 실시간 경로. 모터는 라즈베리파이가 직접 돌린다. 마이크 어레이가 잰 음원 방향을 그대로 받아, 음성이 있는 동안 300&nbsp;ms마다 100&nbsp;ms씩 진동한다. 점선은 선택 경로다. 확정된 단어에서 나오므로 endpoint verifier를 기다리며, 그 시간이 1.1–3.2초다.", "Figure 2. The wearable, drawn from the outer wall of its own print toolpath. The two cylinders are the left and right motor pods.": "<b>그림 2.</b> 웨어러블. 3D 프린터 출력 경로의 바깥 벽선이다. 원통 두 개가 좌우 모터다.", "Figure 3. One word, from the air to its color turn. The turn lands at 1.75 s, while the speaker is still provisional and nearly three seconds before the durable decision.": "<b>그림 3.</b> 단어 하나가 소리에서 색이 되기까지. 색은 1.75초에 바뀐다. 그때 화자는 아직 임시값이고, 확정까지 3초 가까이 남아 있다.", "Figure 4. CaptionSpec 1.0 in full, from schema.py. start and end are what everything else is keyed to: prosody, the motion clock, the read-ahead floor and the haptic cue all read them, which is why a recognizer that cannot supply them is no use here. Per-stage intermediates — WordTiming, DiarSegment, ProsodyFeature — live in the same file and never reach a renderer.": "<b>그림 4.</b> <code>schema.py</code>에 정의된 CaptionSpec 1.0 전체. 단어마다 붙는 <code>start</code>와 <code>end</code>가 나머지 전부의 기준이다. 운율, 모션 타이밍, read-ahead 최소값, 햅틱 신호가 모두 이 두 값을 읽는다. 그래서 이 두 값을 주지 못하는 인식기는 여기에 쓸 수 없다. 단계별 중간 자료인 <code>WordTiming</code>, <code>DiarSegment</code>, <code>ProsodyFeature</code>는 같은 파일에 있지만 렌더러에는 전달되지 않는다.", "Figure 4. What one word carries, from schema.py. start and end are the pair everything else is keyed to: prosody, the motion clock, the read-ahead floor and the haptic cue all read them, which is why a recognizer that cannot supply them is no use here.": "<b>그림 4.</b> 단어 하나가 담는 값. <code>schema.py</code>에 정의되어 있다. 나머지 전부의 기준은 <code>start</code>와 <code>end</code>다. 운율, 모션 타이밍, read-ahead 최소값, 햅틱 신호가 모두 이 두 값을 읽는다. 그래서 이 두 값을 주지 못하는 인식기는 여기에 쓸 수 없다.", "Figure 5. A live capture. History recedes by age above the ruled live line; each speaker holds an arc of the ring.": "<b>그림 5.</b> 실시간 녹음 화면. 가로 구분선 아래가 지금 진행 중인 줄이다. 그 위로 지난 자막이 오래된 순서대로 물러난다. 링에서는 화자마다 호 하나씩을 차지한다.", "Gain is applied to the recognizer's copy only": "키운 소리는 인식기에만 보낸다", "Half the pop is given to every word outright and the other half is earned by how much that word swelled. A word with no growth still moves 1.038×, and the most emphatic one reaches the full 1.076×.": "팝의 절반은 모든 단어에 그냥 주고, 나머지 절반은 그 단어가 얼마나 커졌는지로 번다. 전혀 커지지 않은 단어도 1.038배는 움직이고, 가장 강한 단어가 1.076배를 다 받는다.", "Hold lift. Silence either side lifts a word, and it lands on its turn. Isolation, not sustain.": "<b>Hold lift.</b> 앞뒤에 침묵이 있는 단어는 위로 떠오른다. 색이 바뀌는 순간 제자리로 내려앉는다. 기준은 길게 끄는 소리가 아니라 앞뒤가 비어 있는지다.", "Holds": "담는 값", "Internals": "내부 구조", "L loudness, 0 to 1 db the word's level lo, hi that speaker's 10th and 95th percentile, at least 18 dB apart E emphasis τ spectral tilt, how pressed the voice is τ̄ the mean tilt of recent words F₀ the word's pitch F̃₀ that speaker's median pitch PWL the fitted piecewise-linear curve, topping out at 1.425": "<code>L</code> 음량, 0에서 1  <code>db</code> 그 단어의 음량  <code>lo, hi</code> 그 화자의 10·95 백분위, 최소 18 dB 간격  <code>E</code> 강세  <code>τ</code> 스펙트럼 기울기, 목소리를 얼마나 쥐어짰는지  <code>τ̄</code> 최근 단어들의 기울기 평균  <code>F₀</code> 그 단어의 음높이  <code>F̃₀</code> 그 화자의 중앙값 음높이  <code>PWL</code> 실측으로 맞춘 구간 선형 곡선, 최대 1.425", "Languages": "언어", "Live Caption with Intention": "Live Caption with Intention", "Localno cloud, no telemetry": "로컬<small>클라우드도, 원격 수집도 없음</small>", "Loudness is measured from the original signal. Amplify it first and a whisper and a shout end up the same size.": "작은 소리는 알아듣기 쉽게 키워서 인식기에 보낸다. 글자 크기는 키우기 전의 소리에서 정한다.", "Motion": "모션", "One word, from the air to the color turn": "단어 하나, 소리에서 색이 되기까지", "Our Program": "Our Program", "Pipeline": "파이프라인", "Pop and lift. One animation. Every word rises 0.16 em and every word grows, in proportion to its crest.": "<b>Pop과 lift.</b> 애니메이션 하나로 처리한다. 모든 단어가 <i>0.16 em</i> 떠오르고, 모든 단어가 커진다. 커지는 정도는 그 단어의 crest에 비례해 1.038배에서 1.076배 사이다.", "Poster": "포스터", "Prosody measures loudness from the captured signal; gaining it first maps a whisper and a shout to the same type size.": "운율은 원신호에서 음량을 측정한다. 게인을 먼저 적용하면 음량 차이가 압축되어 속삭임과 외침이 같은 크기로 그려진다.", "Prosody, the motion clock and the read-ahead floor all key off per-word start and end times, so a recognizer without them can supply text at the verifier boundary and nowhere else.": "운율, 모션 타이밍, read-ahead 최소 시간이 모두 단어별 시작·끝 시각을 기준으로 계산된다. 이 시각을 주는 인식기만 실시간 경로에 쓴다. 그렇지 않은 인식기는 문장이 끝난 뒤 글자를 고치는 단계에만 쓴다.", "Read-ahead": "Read-ahead", "Read-ahead is a per-word floor": "read-ahead는 단어마다 따로 보장한다", "Rule": "규칙", "Runs": "실행", "S1 … S12, each given a color from the palette below": "S1 … S12. 아래 팔레트에서 색을 하나씩 배정한다", "Seven tenths of the width comes from the word’s own pitch and three tenths from breathiness: the lower the pitch the wider, the breathier the voice the narrower. It never leaves 82 to 124 percent.": "너비의 7할은 그 단어의 음높이가, 3할은 숨소리가 정한다. 음높이가 낮을수록 넓어지고, 숨이 많이 섞일수록 좁아진다. 82%에서 124% 밖으로는 나가지 않는다.", "Speakers": "화자", "Streaming and verified transcripts mismatch on nearly every utterance. Rebuilding the block would flash the sentence at every pause, so matches are corrected in place and insertions added at their spoken position.": "실시간 인식 결과와 검증 결과는 거의 모든 발화에서 다르다. 문단 전체를 다시 그리면 발화가 멈출 때마다 문장이 번쩍인다. 일치하는 단어는 제자리에서 글자만 바꾸고, 추가된 단어는 발화된 위치에 삽입한다.", "Studio": "스튜디오", "System architecture": "시스템 구조", "Text arrives long before a durable speaker decision, so the turn happens on time in whatever color is known.": "글자는 화자가 확정되기 한참 전에 도착한다. 그래서 색을 바꿀 시각이 되면, 그때까지 알아낸 색으로 바꾼다.", "The 80 ms is split evenly across the letters, so the color sweeps from the first to the last at a constant rate. The last letter turns exactly 80 ms after the first, however long the word is.": "80 ms를 글자 수로 똑같이 나눈다. 그래서 색이 첫 글자에서 마지막 글자까지 일정한 속도로 훑고 지나간다. 단어가 길든 짧든 마지막 글자는 첫 글자보다 정확히 80 ms 뒤에 바뀐다.", "The Caption with Intention design system is authored by the Chicago Hearing Society and is the final word wherever this page and it disagree. This is an independent implementation, not affiliated with or endorsed by them.": "Caption with Intention 디자인 시스템은 시카고 청각협회(Chicago Hearing Society)가 만들었다. 이 페이지와 원 디자인 시스템의 내용이 다르면 원 디자인 시스템이 기준이다. 이 페이지는 독립적으로 만든 구현이다. 협회와 제휴 관계가 없고, 협회의 보증도 받지 않았다.", "The color turn runs 1.75 s behind the voice, so recognized words are on screen well before they are colored.": "색이 바뀌는 시각은 소리보다 1.75초 뒤다. 그래서 인식된 단어는 색이 칠해지기 한참 전에 이미 화면에 올라와 있다.", "The contract": "데이터 계약", "The event stream": "이벤트 스트림", "The fraction places this word’s level between that speaker’s quiet and loud ends — 0 at one, 1 at the other — with emphasis added on top and clip holding the result inside them. PWL turns that into how much to grow: nothing at all below 0.21, and at most 0.425 above it.": "분수는 이 단어의 음량이 그 화자의 가장 조용한 쪽과 가장 큰 쪽 사이에서 어디쯤인지를 나타낸다. 한쪽 끝이 0, 다른 쪽 끝이 1이다. 거기에 강세를 더하고, clip이 결과를 두 끝 안으로 잡아 둔다. PWL은 그 값을 얼마나 커질지로 바꾼다. 0.21 아래는 전혀 커지지 않고, 그 위로는 최대 0.425까지 커진다.", "The fraction rescales the level so that lo lands on 0 and hi on 1: it answers where between those two ends this word fell. Emphasis is added on top, so a word can reach further than its level alone would take it, and clip pins anything past the ends back onto them. PWL then turns that 0-to-1 number into how much to grow, from 0 up to 0.425, and the crest is one plus that. It returns 0 for anything below 0.21, so the bottom fifth of the range produces no size change at all. In E both the tilt terms and the pitch term are in dB, which is what lets them be added: 20 log₁₀(F₀ / F̃₀) turns a pitch ratio into that same unit.": "분수는 lo를 0, hi를 1에 놓고 레벨을 다시 매긴다. 이 단어가 그 두 끝 사이 어디에 떨어졌는지를 나타내는 값이다. 거기에 강세를 더하므로 레벨만으로 갈 수 있는 곳보다 멀리 갈 수 있고, clip이 양 끝을 넘어간 값을 끝으로 되돌린다. PWL은 그 0~1 값을 얼마나 커질지로 바꾼다. 0에서 0.425까지이고, crest는 거기에 1을 더한 값이다. 0.21 아래는 0을 돌려주므로 범위의 아래쪽 5분의 1은 크기가 전혀 변하지 않는다. E에서는 기울기 항과 음높이 항이 모두 dB 단위인데, 그래서 그대로 더할 수 있다. 20 log₁₀(F₀ / F̃₀)가 음높이 비를 같은 단위로 바꾼다.", "The palette — CWI 2.1.1, by order of first appearance": "CWI 2.1.1 팔레트, 처음 등장한 순서대로", "The pipeline": "파이프라인", "The playhead trails the acoustic clock": "playhead는 소리보다 뒤에서 따라간다", "The same 80 ms as the color turn, split across syllable groups instead of letters. A two-syllable word therefore takes two steps where a six-letter word would take six.": "색 전환과 같은 80 ms를 글자가 아니라 음절 묶음 수로 나눈다. 그래서 두 음절짜리 단어는 두 단계를 밟고, 여섯 글자 단어라면 여섯 단계를 밟았을 자리를 두 번에 지난다.", "The studio": "스튜디오", "The turn is a fixed moment on the acoustic timeline, so it happens on time in whatever color is known — attribution never gates it.": "색이 바뀌는 시각은 소리의 시간축 위에 고정되어 있다. 그 시각이 오면, 그때까지 알아낸 색으로 바꾼다. 화자가 아직 정해지지 않아도 기다리지 않는다.", "The turn is never gated on the speaker": "색은 화자가 정해지기를 기다리지 않는다", "Utterances are reconciled, not rebuilt": "수정된 발화는 단어 단위로 반영한다", "W font width, in percent t the word's own pitch, −1 to 1 θ texture: 0.70 (1 − pitch confidence) + 0.30 brightness h the harmonic term derived from it ΔW how much width is left between 100 and the end of the range": "<code>W</code> 글자 너비, 퍼센트  <code>t</code> 그 단어의 음높이, −1에서 1  <code>θ</code> 숨소리 비율: 0.70 (1 − 음높이 신뢰도) + 0.30 밝기  <code>h</code> 거기서 나온 배음 항  <code>ΔW</code> 100에서 범위 끝까지 남은 너비", "Weave automates the Caption with Intention design system: a microphone streams into captions that carry the speaker in color, the moment in motion, and the voice in typography — entirely offline.": "Weave는 Caption with Intention 디자인 시스템을 자동화한다. 마이크로 들어온 음성이 자막이 된다. 자막의 색은 화자를, 모션은 발화 시점을, 타이포그래피는 발화 방식을 나타낸다. 전 과정이 오프라인에서 돌아간다.", "Weight starts at the neutral 400 and is moved by two pushes that add: where the voice sits overall, and how loud this word is right now. Pitch alone cannot tell a habitually high voice from one that is shouting, which is why it is split in two. The clip keeps the result legible at caption size.": "굵기는 중립인 400에서 출발해 서로 더해지는 두 힘으로 움직인다. 그 목소리가 전체적으로 어디에 있는지, 그리고 이 단어를 지금 얼마나 크게 냈는지다. 음높이 하나로는 원래 목소리가 높은 사람과 지금 소리를 지르는 사람을 구분할 수 없어서 둘로 나눴다. 클립은 결과가 자막 크기에서 읽히도록 잡아 준다.", "Weight. The speaker’s habitual pitch sets where a word starts — the lower the voice, the heavier — and a loud or pressed word climbs from there. 340 to 900.": "<b>Weight.</b> 그 화자의 평소 음높이가 낮을수록 굵게 시작한다. 거기서 크게 내거나 힘줘 낸 단어가 위로 더 굵어진다. 340에서 900 사이다.", "What": "개요", "What it is": "개요", "Width. Driven by the word’s own pitch, with a breathiness reading blended in. The quietest of the eight channels.": "<b>Width.</b> 그 단어의 음높이로 정하고, 숨소리가 섞인 정도를 섞는다. 여덟 채널 중 변화가 가장 작다. 글자 너비는 82~124% 사이에 머문다.", "Word onsets are never synthesized": "단어의 시작 시각은 인식기가 제공한 값을 쓴다", "Words arrive in bursts, so a delay moves the mean lead without narrowing its spread. Only a per-word floor guarantees the margin.": "인식기는 단어를 한꺼번에 몰아서 내보낸다. 자막 전체를 늦추면 평균은 여유로워지지만, 몰려 나온 단어들 사이의 간격은 그대로다. 그래서 단어마다 따로 최소 시간을 정해 둔다.", "Words arrive in bursts, so a fixed delay guarantees nothing. Every word gets at least 420 ms on screen before its color turns.": "인식기는 단어를 한꺼번에 몰아서 내보낸다. 그래서 자막 전체를 일정하게 늦춰도 단어 하나하나의 여유는 보장되지 않는다. 단어마다 색이 바뀌기 전에 최소 420 ms는 화면에 먼저 올라와 있게 한다.", "a finished phrase, re-recognized and corrected word by word": "끝난 문장을 다시 인식해서 단어마다 고친 결과", "a non-speech sound — laughter, applause, music, the room itself": "음성이 아닌 소리. 웃음, 박수, 음악, 공간음 자체", "a piecewise-linear curve fitted to the reference film, through six control points, topping out at 0.425": "레퍼런스 영상에 맞춰 실측으로 정한 구간 선형 곡선. 제어점 여섯 개를 지나며 0.425에서 멈춘다", "a word entering the revisable window": "이제부터 고칠 수 있게 된 단어", "a word leaving the revisable window": "더 이상 고치지 않기로 확정된 단어", "breathiness on a −1 to 1 scale: the more air in the voice, the closer to −1": "숨소리를 −1에서 1 사이 값으로 옮긴 것. 숨이 많이 섞일수록 −1에 가깝다", "clips the value to the range that follows it; anything outside becomes the nearest end": "값을 뒤에 오는 범위 안으로 자른다. 범위를 벗어나면 가까운 쪽 끝값이 된다", "emphasis, added on top of the level; only a score above 0.72 is added at all": "강세. 레벨 위에 더해진다. 0.72를 넘는 점수만 실제로 더해진다", "g syllable-group index G syllable groups in the word": "<code>g</code> 음절 묶음 순번  <code>G</code> 단어의 음절 묶음 수", "how far the word leaves the line, in em, when there is silence on both sides of it": "앞뒤에 침묵이 있을 때 단어가 줄에서 떠오르는 거리, em 단위", "how far there is to go from 400 to the end: 500 to reach 900 going heavier, only 60 to reach 340 going lighter": "400에서 끝까지 갈 수 있는 거리. 굵어지는 쪽은 900까지 500이고, 가늘어지는 쪽은 340까지 60뿐이다", "how far there is to go from the neutral 100% to the end of the range": "100%에서 끝까지 갈 수 있는 거리", "how far this word's crest sits up the reachable range, 0 at no growth and 1 at the largest the system allows": "이 단어의 crest가 도달 가능 범위에서 차지한 위치. 전혀 커지지 않으면 0, 시스템이 허용하는 최대면 1", "how many letters the word has": "단어의 글자 수", "how many syllable groups the word splits into": "단어가 몇 개의 음절 묶음으로 나뉘는지", "how much air escapes with the voice. Whispering, or speaking on a sigh, leaves the folds open enough that the sound drifts from a steady vibration; that drift is seven tenths of the reading and how much high-frequency energy there is the other three": "목소리에 바람 소리가 얼마나 섞였는지. 속삭이거나 한숨 쉬듯 말하면 성대가 덜 닫혀 공기가 새고, 소리가 규칙적인 진동에서 멀어진다. 그 멀어진 정도가 7할, 고음이 얼마나 많은지가 3할이다", "i letter index n letters in the word": "<code>i</code> 글자 순번  <code>n</code> 단어의 글자 수", "input level, noise floor, gain, and the bearing when an array supplies one": "마이크 입력 크기, 주변 잡음 크기, 적용한 게인. 마이크 어레이가 있으면 소리가 온 방향까지", "label · category (vocal | reaction | music | environmental) · start · end · conf · source": "<code>label</code> · <code>category</code> (목소리 | 반응 | 음악 | 환경음) · <code>start</code> · <code>end</code> · <code>conf</code> · <code>source</code>", "loudness and pitch, each placed within that speaker’s own range": "음량과 음높이. 그 화자 자신의 범위 안에서 어디쯤인지로 나타낸 값이다", "loudness · pitch normalized within the speaker, beside raw loudness_db · pitch_hz · voiced_frac": "화자 안에서 정규화한 <code>loudness</code> · <code>pitch</code>, 그리고 원값 <code>loudness_db</code> · <code>pitch_hz</code> · <code>voiced_frac</code>", "loudness: where this word sits in that speaker's recent range, 0 to 1": "음량. 이 단어가 그 화자의 최근 음량 범위에서 어디쯤인지를 0에서 1로 나타낸 값", "loudness_to · pitch_to · speaker_to, each an axis of axis · min · max · invert · unit? · domain_hz? · baseline?": "<code>loudness_to</code> · <code>pitch_to</code> · <code>speaker_to</code>. 각각 <code>axis</code> · <code>min</code> · <code>max</code> · <code>invert</code> · <code>unit?</code> · <code>domain_hz?</code> · <code>baseline?</code>로 이뤄진 축 하나", "medians over a live session": "실시간 세션에서 잰 중앙값", "motion? of t0 · dt · lift[] · scale[] · dwght[], replayed verbatim instead of modelled": "<code>t0</code> · <code>dt</code> · <code>lift[]</code> · <code>scale[]</code> · <code>dwght[]</code>로 이뤄진 <code>motion?</code>. 모델로 근사하지 않고 실측값을 그대로 재생한다", "provisional": "임시값", "r reduced: the pull toward Light weakens as the word gets louder, and vanishes entirely at full p. A pressed voice is not an airy one": "<code>r</code>을 줄인 값. 높은 목소리를 가늘게 만드는 힘은 크게 말한 단어일수록 약해지고, <code>p</code>가 최대일 때는 아예 없어진다", "read-ahead ≥ 420 ms": "read-ahead ≥ 420 ms", "register: the speaker’s median pitch mapped to −1…1 — +1 at 80 Hz and below, 0 right across the neutral 160–200 Hz band, −1 at 250 Hz and above": "음역. 그 화자의 중앙값 음높이를 −1~1로 옮긴 값. 80 Hz 이하가 +1, 중립 구간인 160–200 Hz는 전 구간 0, 250 Hz 이상이 −1", "s_pop the size the word pops to e how far its crest sits up the reachable range, 0 to 1": "<code>s_pop</code> 단어가 팝하며 도달하는 크기  <code>e</code> 그 단어의 crest가 도달 가능 범위에서 차지한 위치, 0에서 1", "settled": "확정된 값", "sound": "음성", "speaker": "화자", "spectral tilt: how hard the voice is pressed. It rises when someone speaks with force, even without getting louder": "스펙트럼 기울기. 목소리를 얼마나 쥐어짜서 냈는지를 나타낸다. 크게 말하지 않아도 힘줘 말하면 올라간다", "text and prosody": "텍스트 · 운율", "text · start · end · conf": "<code>text</code> · <code>start</code> · <code>end</code> · <code>conf</code>", "text · start · end — the word, and the moment it begins and ends": "<code>text</code> · <code>start</code> · <code>end</code>. 단어와, 그 단어가 시작하고 끝난 시각", "text, span, speaker, loudness, pitch, and the salience flags the haptics read": "글자, 말한 구간, 화자, 음량, 음높이. 그리고 진동을 울릴지 판단할 때 쓰는 중요도 값", "the 10th and 95th percentile of that speaker's recent levels; the two are held at least 18 dB apart so a monotone passage is not stretched": "그 화자의 최근 레벨에서 구한 10·95 백분위. 두 값의 차이는 최소 18 dB로 유지해서, 변화가 거의 없는 구간이 억지로 늘어나지 않게 한다", "the endpoint verifier reconciling a finished phrase, word by word": "문장이 끝난 뒤 다시 인식해서 단어마다 대조한 결과", "the fundamental frequency of this word, that is its pitch": "이 단어의 기본 주파수, 곧 음높이", "the letter's position in the word, counted from zero": "그 글자가 단어에서 몇 번째인지, 0부터 센다", "the level of this word's own span, taken as the 90th percentile of its frame RMS in dB": "이 단어 구간의 레벨. 프레임별 RMS의 90 백분위를 dB로 잰다", "the mean tilt of recent words, which keeps one loud word from setting the baseline by itself": "최근 단어들의 기울기 평균. 큰 소리 하나가 기준을 혼자 정해 버리는 것을 막는다", "the median pitch that speaker has been producing lately": "그 화자가 최근 내고 있는 음높이의 중앙값", "the pitch of this word itself, not the speaker’s median: +1 when low, −1 when high": "이 단어의 음높이. 화자의 중앙값이 아니라 이 단어를 낼 때의 값이고, 낮으면 +1, 높으면 −1이다", "the playhead — 1.75 s": "playhead — 1.75초", "the rendered font weight, between 340 and 900": "실제로 그려지는 글자 굵기. 340에서 900 사이", "the rendered font width, in percent, between 82 and 124": "실제로 그려지는 글자 너비. 82%에서 124% 사이", "the same 0-to-1 loudness the crest reads; 0.222 is where ordinary speaking level sits on it": "crest가 읽는 것과 같은 0~1 음량. 보통 크기로 말하면 0.222가 된다", "the size the word reaches at the top of its pop": "단어가 팝의 정점에서 도달하는 크기", "the size the word swells to: 1.000 at no growth, 1.425 at the largest the system allows": "단어가 부푼 정점에서 도달하는 글자 크기 배율. 안 커지면 1.000, 최대 1.425", "the speaker, and whether that is settled or still a guess": "화자, 그리고 그것이 확정된 값인지 아직 임시값인지", "the streaming recognizer’s running guess at the phrase": "아직 확정되지 않은, 계속 바뀌는 중간 결과", "the syllable group's position in the word, counted from zero": "그 음절 묶음이 단어에서 몇 번째인지, 0부터 센다", "the word is spoken": "단어를 발화한 순간", "the word turns here": "여기서 단어의 색이 바뀐다", "this word’s own loudness, counted upward from ordinary speaking level only: 0 at or below it, adding at most 460 of weight at the loudest. It never subtracts": "이 단어 자체의 음량. 보통 크기로 말할 때를 0으로 잡고 그 위로만 센다. 기준 아래는 0이고, 가장 큰 소리가 굵기를 460까지 더한다", "twelve supporting hues": "보조 색 열두 가지", "unknown": "미정", "verified text": "검증된 텍스트", "w font weight r register, −1 to 1, from the speaker's median pitch Δw how much weight is left between 400 and the end of the range p how pressed the voice is": "<code>w</code> 글자 굵기  <code>r</code> 화자의 중앙값 음높이에서 온 음역, −1에서 1  <code>Δw</code> 400에서 범위 끝까지 남은 굵기  <code>p</code> 목소리를 누른 정도", "which model is still loading, before capture is real": "녹음이 실제로 시작되기 전, 아직 로딩 중인 모델", "words[] — a measured curve": "<code>words[]</code> — 실측 곡선", "words[] — how it was said": "<code>words[]</code> — 발화 방식", "words[] — how to set it": "<code>words[]</code> — 조판 방식", "words[] — what was said": "<code>words[]</code> — 발화 내용", "words[] — who said it": "<code>words[]</code> — 발화 주체", "{ S1 … S12 → color }, #RRGGBB from the CWI 2.1.1 palette by order of first appearance": "<code>{ S1 … S12 → color }</code>, 처음 등장한 순서대로 배정한 CWI 2.1.1 팔레트의 #RRGGBB", "ℓ how far the word leaves the line": "<code>ℓ</code> 단어가 줄에서 떠오르는 거리", "≈280 ms": "≈280 ms"};
+
+  var KO_ATTR = {"A time axis from the moment a word is spoken to five seconds later. The sound itself is about 280 milliseconds. Its text and prosody arrive at a median 0.62 seconds. The speaker is provisional from 0.62 seconds and durable only at 4.48 seconds. Verified text lands somewhere between 1.1 and 3.2 seconds. The playhead stands at 1.75 seconds: the word turns color there, while its speaker is still provisional.": "단어를 발화한 순간부터 5초 뒤까지의 시간 축. 음성 자체는 약 280밀리초다. 텍스트와 운율은 중앙값 0.62초에 도착한다. 화자는 0.62초부터 임시값이고 4.48초에야 확정된다. 검증된 텍스트는 1.1초에서 3.2초 사이에 들어온다. playhead는 1.75초에 있고, 단어는 그 지점에서 색이 바뀐다. 그때 화자는 아직 임시값이다.", "Chapters": "챕터", "The live path. Inside the wearable, four microphones feed echo cancellation, beamforming and direction of arrival on a ReSpeaker board, which passes to a Raspberry Pi Zero 2 W. The Pi sends the direction of arrival straight down to the left and right vibration motors, and sends audio plus direction on to the computer, which returns power. On the computer a lossless deadline batcher splits into a true signal for prosody and a gained copy for recognition, feeding four independent stages — voice for prosody, speaker for diarization, text for recognition and sound for tagging — which join per word into CaptionSpec. CaptionSpec goes over SSE to the browser, where a web app applies revisions and a playhead presents them to the stage, and also to a salience stage whose cue reaches the motors on an optional dashed path.": "실시간 경로. 웨어러블 안에서 마이크 네 개의 신호가 ReSpeaker 보드로 들어간다. 보드는 반향 제거, 빔포밍, 음원 방향 추정을 하고 결과를 라즈베리파이 제로 2 W로 넘긴다. 파이는 음원 방향을 곧바로 좌우 진동 모터로 보낸다. 음성과 방향은 컴퓨터로 올려 보내고, 컴퓨터는 전원을 돌려준다. 컴퓨터에서는 무손실 마감 배치기가 신호를 운율용 원본과 인식용 게인 사본으로 나눈다. 운율용 음성, 화자 분리, 텍스트 인식, 소리 태깅의 네 단계가 각각 독립적으로 돌고, 결과는 단어마다 CaptionSpec으로 합쳐진다. CaptionSpec은 SSE로 브라우저에 전달된다. 브라우저에서는 웹 앱이 수정을 반영하고 playhead가 화면에 올린다. CaptionSpec은 중요도 단계로도 가며, 그 신호는 점선으로 표시된 선택 경로를 통해 모터에 전달된다.", "The printed parts of the wearable, drawn as stacked layer contours: a neckband arch carrying a left and a right motor pod, the enclosure body and its lid, a vent grille and two spacers.": "웨어러블의 출력 부품을 층별 윤곽선으로 쌓아 그린 그림. 좌우 모터 포드를 단 넥밴드 아치, 케이스 본체와 뚜껑, 통풍 그릴, 스페이서 두 개.", "The studio running. A dark stage carries rolling captions, each word colored by speaker and the newest line ruled off below the history; a right-hand rail shows the input level, a compass ring with one arc per speaker and a needle on the current bearing, and a live waveform.": "실행 중인 스튜디오. 어두운 화면에 자막이 흘러간다. 단어마다 화자 색이 입혀져 있고, 가장 새로운 줄은 지난 자막과 구분선으로 나뉜다. 오른쪽 레일에는 입력 레벨, 화자마다 호 하나씩을 가진 컴퍼스 링과 현재 방위를 가리키는 바늘, 실시간 파형이 있다."};
+  var I18N_SEL = ['.eyebrow', 'h2', '.sub-h', '.lead', 'p', 'li', 'td', 'th',
+                  'figcaption', 'dt', 'dd', 'button', '.chapters a',
+                  'svg text'].join(',');
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  function normText(s) { return s.replace(/\s+/g, ' ').trim(); }
+
+  var candidates = [].slice.call(document.querySelectorAll(I18N_SEL))
+    .filter(function (el) {
+      /* 수식은 두 언어가 같고, KaTeX 가 이미 DOM 을 바꿔 놓았다. 여기에
+         넣으면 언어를 바꿀 때마다 렌더링이 LaTeX 원문으로 되돌아간다. */
+      return !el.closest('.line') && !el.closest('.lang') && !el.closest('.nt')
+        && !el.closest('.box-math') && !el.matches('.box-syms dt');
+    });
+  // Only the innermost of any nested pair, or a paragraph and its own button
+  // would both be rewritten and the button would be lost.
+  var original = candidates
+    .filter(function (el) {
+      return !candidates.some(function (o) { return o !== el && el.contains(o); });
+    })
+    .map(function (el) {
+      return { el: el, html: el.innerHTML, text: el.textContent,
+               key: normText(el.textContent) };
+    });
+
+  var originalAttrs = [];
+  [].slice.call(document.querySelectorAll('img[alt],[aria-label]'))
+    .forEach(function (el) {
+      var attr = el.hasAttribute('alt') ? 'alt' : 'aria-label';
+      if (el.closest('.lang')) return;
+      originalAttrs.push({ el: el, attr: attr, value: el.getAttribute(attr),
+                           key: normText(el.getAttribute(attr)) });
+    });
+
+  var langButtons = [].slice.call(document.querySelectorAll('[data-set-lang]'));
+
+  function setLang(lang) {
+    var ko = lang === 'ko';
+    var misses = [];
+    original.forEach(function (o) {
+      var t = ko ? KO[o.key] : null;
+      if (ko && !t) misses.push(o.key);
+      if (o.el.namespaceURI === SVG_NS) o.el.textContent = t || o.text;
+      else o.el.innerHTML = t || o.html;
+    });
+    originalAttrs.forEach(function (o) {
+      var t = ko ? KO_ATTR[o.key] : null;
+      o.el.setAttribute(o.attr, t || o.value);
+    });
+    document.documentElement.lang = ko ? 'ko' : 'en';
+    document.documentElement.setAttribute('data-lang', ko ? 'ko' : 'en');
+    langButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-set-lang') === lang
+        ? 'true' : 'false');
+    });
+    try { localStorage.setItem('weave-lang', lang); } catch (e) {}
+    window.__i18nMisses = misses;
+  }
+
+  langButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      setLang(b.getAttribute('data-set-lang'));
+    });
+  });
+
+  var chosen = null;
+  try { chosen = localStorage.getItem('weave-lang'); } catch (e) {}
+  if (chosen !== 'en' && chosen !== 'ko') {
+    chosen = /^ko\b/i.test(navigator.language || '') ? 'ko' : 'en';
+  }
+  if (chosen === 'ko') setLang('ko');
+})();
+
+/* ---- poster ---------------------------------------------------------- *
+ * Borrows the motion boxes and the two figures into one fixed-width sheet
+ * and scales that sheet to the viewport. Borrowed, not copied: `setLang`
+ * above closed over the elements it found at load, so a copy would be stuck
+ * in whatever language was showing when the poster was first opened.        */
+(function () {
+  var btn = document.getElementById('poster-btn');
+  var poster = document.getElementById('poster');
+  var fit = document.getElementById('poster-fit');
+  var sheet = document.getElementById('poster-sheet');
+  var boxHost = document.getElementById('poster-boxes');
+  if (!btn || !poster || !fit || !sheet || !boxHost) return;
+
+  var borrowed = [];
+
+  function borrow(el, host) {
+    borrowed.push({ el: el, parent: el.parentNode, next: el.nextSibling });
+    host.appendChild(el);
+  }
+
+  function giveBack() {
+    for (var i = borrowed.length - 1; i >= 0; i -= 1) {
+      borrowed[i].parent.insertBefore(borrowed[i].el, borrowed[i].next);
+    }
+    borrowed = [];
+  }
+
+  /* KaTeX display math does not wrap, so a long formula in a quarter-width
+     column is simply cut off. Scaling the .box-math around it does nothing --
+     the clip box scales with it -- so each formula is scaled inside its own
+     full-width, non-clipping .katex-display, which centres it back to fit. */
+  function fitMath() {
+    var rows = poster.querySelectorAll('.box-math .katex-display');
+    for (var i = 0; i < rows.length; i += 1) {
+      var row = rows[i];
+      row.style.transform = 'none';
+      var room = row.clientWidth;
+      var need = row.scrollWidth;
+      if (room && need > room + 1) {
+        row.style.transformOrigin = 'left top';
+        row.style.transform = 'scale(' + (room / need) + ')';
+      }
+    }
+  }
+
+  /* Row spans, measured. `align-items: start` keeps every item at its own
+     content height whatever track it lands in, so the height read here is the
+     real one and the span can be computed from it. */
+  function layout() {
+    var items = boxHost.children;
+    for (var i = 0; i < items.length; i += 1) {
+      var h = items[i].getBoundingClientRect().height;
+      items[i].style.gridRowEnd = 'span ' + Math.ceil((h + 14) / 4);
+    }
+  }
+
+  function rescale() {
+    if (poster.hidden) return;
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    if (!vw || !vh) return;
+    fit.style.transform = 'none';
+
+    var want = vh / vw;
+    var lo = 1300;
+    var hi = 2100;
+    for (var i = 0; i < 12; i += 1) {
+      var mid = (lo + hi) / 2;
+      sheet.style.width = mid + 'px';
+      fit.style.width = mid + 'px';
+      fitMath();
+      layout();
+      if (sheet.offsetHeight / mid > want) lo = mid; else hi = mid;
+    }
+    sheet.style.width = hi + 'px';
+    fit.style.width = hi + 'px';
+    fitMath();
+    layout();
+
+    var h = sheet.offsetHeight;
+    // The height term is what keeps a tall sheet on screen when the search
+    // ran into its ceiling.
+    fit.style.transform = 'scale(' + Math.min(vw / hi, h ? vh / h : 1) + ')';
+  }
+
+  function open() {
+    var figures = document.querySelectorAll('#pipeline figure');
+    for (var i = 0; i < figures.length; i += 1) borrow(figures[i], boxHost);
+    var boxes = document.querySelectorAll('#motion .box');
+    for (var j = 0; j < boxes.length; j += 1) borrow(boxes[j], boxHost);
+    poster.hidden = false;
+    document.documentElement.setAttribute('data-view', 'poster');
+    btn.setAttribute('aria-pressed', 'true');
+    rescale();
+    // KaTeX renders on a deferred script, so the first open can measure a
+    // sheet whose formulas have not been laid out yet.
+    window.setTimeout(rescale, 60);
+  }
+
+  function close() {
+    poster.hidden = true;
+    document.documentElement.removeAttribute('data-view');
+    btn.setAttribute('aria-pressed', 'false');
+    giveBack();
+  }
+
+  btn.addEventListener('click', function () {
+    if (poster.hidden) open(); else close();
+  });
+
+  var closeBtn = document.getElementById('poster-close');
+  if (closeBtn) closeBtn.addEventListener('click', close);
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !poster.hidden) close();
+  });
+
+  window.addEventListener('resize', rescale);
+
+  // Korean sets taller lines, so the sheet has to be measured again.
+  [].slice.call(document.querySelectorAll('[data-set-lang]')).forEach(function (b) {
+    b.addEventListener('click', rescale);
+  });
 })();
 </script>
 
+<script defer
+        src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script defer
+        src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"
+        onload="renderMathInElement(document.body, {delimiters:[
+          {left:'$$', right:'$$', display:true},
+          {left:'\\(', right:'\\)', display:false}], throwOnError:false});"></script>
 </body>
 </html>

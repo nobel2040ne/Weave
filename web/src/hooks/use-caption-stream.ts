@@ -22,6 +22,7 @@ import {
   monotonicTimeForAcousticMs,
   presentationNowMs,
   readAheadMs,
+  turnMomentFor,
   type PlayheadClock,
 } from "@/lib/caption-clock";
 
@@ -71,6 +72,9 @@ export interface RuntimeConfig {
   readAheadDelayMs: number;
   /** A word may not turn until it has been on screen this long. */
   minReadAheadMs: number;
+  /** Stagger between successive floor-clamped (caught-up) words, so a burst
+      released at an endpoint ripples instead of popping as one wall. */
+  wordRevealCatchupGapMs: number;
   /** 2.2.1: "full white at 90% opacity" -- against 2.4.1's black box. */
   readAheadColor: string;
   /** The boxless light stage measures white at 1.05:1. See config.yaml. */
@@ -165,6 +169,7 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   stageMinRows: 16,
   readAheadDelayMs: 2500,
   minReadAheadMs: 420,
+  wordRevealCatchupGapMs: 60,
   readAheadColor: "#ffffff",
   readAheadColorLight: "#6e6e73",
   readAheadOpacity: 0.9,
@@ -350,6 +355,11 @@ export function useCaptionStream({reducedMotion}: StreamOptions) {
   // coarse playhead tick below is what React actually sees.
   const clockRef = useRef<PlayheadClock>(IDLE_CLOCK);
   const runtimeRef = useRef(runtime);
+  // The turn moment of the most recent floor-clamped word, and the epoch it
+  // belongs to, so a caught-up burst is staggered rather than popped as a
+  // wall. Reset when the capture (epoch) changes; see `scheduleWord`.
+  const lastFloorTurnRef = useRef(Number.NEGATIVE_INFINITY);
+  const lastFloorEpochRef = useRef<number | null>(null);
   const lateWordsRef = useRef(0);
   const frozenTextRef = useRef(0);
   // id -> the text the word was WEARING when the playhead reached it.
@@ -473,6 +483,14 @@ export function useCaptionStream({reducedMotion}: StreamOptions) {
     }
   }, [flushPending]);
 
+  // RE-FETCHED WHEN THE LANGUAGE RESOLVES, not once on mount. The studio opens
+  // before the picker is answered, so the first response describes the config
+  // BEFORE a profile was chosen -- and a profile can override `display:` keys.
+  // `read_ahead_delay_s` is the one that matters: the Korean and bilingual
+  // recognizers are slower than English and carry their own read-ahead budget,
+  // and reading the pre-language value served Korean a 1750 ms budget it
+  // cannot meet, measured as 0 ms of CWI 2.2.1 read-ahead on the stage.
+  const sessionLanguage = session.language;
   useEffect(() => {
     let cancelled = false;
     fetch(`${backendOrigin}/runtime-config.json`)
@@ -486,7 +504,7 @@ export function useCaptionStream({reducedMotion}: StreamOptions) {
     return () => {
       cancelled = true;
     };
-  }, [backendOrigin]);
+  }, [backendOrigin, sessionLanguage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -628,10 +646,23 @@ export function useCaptionStream({reducedMotion}: StreamOptions) {
       rearmedWordsRef.current += 1;
       return {turnAtMs: previous.turnAtMs, epoch: clock.epoch};
     }
-    /* A WORD MUST BE READABLE BEFORE IT IS SPOKEN, AND A TIME DELAY ALONE
-       CANNOT GUARANTEE THAT (2026-08-03). */
-    const floorMs = performance.now() + runtimeRef.current.minReadAheadMs;
-    const turnAtMs = Math.max(acousticTurnMs, floorMs);
+    /* A WORD MUST BE READABLE BEFORE IT IS SPOKEN, A TIME DELAY ALONE CANNOT
+       GUARANTEE THAT (2026-08-03), AND A BURST OF CAUGHT-UP WORDS MUST NOT POP
+       AS ONE WALL (2026-09-04). Both live in `turnMomentFor`; see its note. The
+       floor chain resets when the capture (epoch) changes. */
+    if (lastFloorEpochRef.current !== clock.epoch) {
+      lastFloorEpochRef.current = clock.epoch;
+      lastFloorTurnRef.current = Number.NEGATIVE_INFINITY;
+    }
+    const moment = turnMomentFor(
+      acousticTurnMs,
+      performance.now(),
+      runtimeRef.current.minReadAheadMs,
+      lastFloorTurnRef.current,
+      runtimeRef.current.wordRevealCatchupGapMs,
+    );
+    const turnAtMs = moment.turnAtMs;
+    if (moment.clamped) lastFloorTurnRef.current = turnAtMs;
     scheduledRef.current.set(id, {turnAtMs, durationMs});
     /* A word delivered past its own onset needs no special case: the
        negative delay leaves the animation finished, so it paints settled. */

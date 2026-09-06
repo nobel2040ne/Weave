@@ -397,9 +397,46 @@ live:
       # condition, and on fast speech it is worth 4.2 CER points
       # (22.58% -> 18.38%) and 1.9 points of deletions (7.72% -> 5.80%).
       streaming_language: ko
+      # RECALL OVER CORRECTNESS, DELIBERATELY (see the root note). Swept on 60
+      # FLEURS ko clips:
+      #   0.0  CER 8.45%  del 2.63%  ins 0.48%  cov 0.978
+      #   2.0  CER 7.93%  del 2.11%  ins 0.52%  cov 0.984   <- free win
+      #   3.0  CER 8.71%  del 1.71%  ins 1.63%  cov 0.999   <- shipped
+      #   4.0  CER 11.68% del 1.30%  ins 4.34%  cov 1.030
+      # 3.0 costs 0.26 CER points against the baseline and drops 35% of the
+      # DELETIONS, taking coverage to 0.999 -- the same amount of speech
+      # transcribed. 4.0 is where insertions start inventing text.
+      blank_penalty: 3.0
+      # CWI 2.2.1 NEEDS A BIGGER BUDGET ON THIS MODEL (measured 2026-09-04).
+      # The global 1.75 s delivers 488 ms of read-ahead on English and **0 ms**
+      # here: the 1120 ms multilingual chunk plus the endpoint hold-back spends
+      # the whole budget, so the playhead reaches every word the instant it
+      # arrives and the line is never legible before it is spoken. At 3.20 s
+      # this profile delivers **583 ms**, which is the English figure's order.
+      # `scripts/studio_probe.py --url ...` is the check; it prints the number
+      # and fails loudly when 2.2.1 is not being delivered.
+      display:
+        read_ahead_delay_s: 3.20
       draft_enabled: false
-      # Off, and now for a second reason: the endpoint verifier existed to fix
-      # first-word errors this model already recognizes with full context.
+      # STAYS OFF, AND THE REASON IS NOW READ-AHEAD, NOT ACCURACY.
+      # Measured 2026-09-04 on 120 FLEURS ko clips, this verifier is a real
+      # accuracy win: CER 7.52% -> 4.97% normalized (12.33% -> 7.57% raw), with
+      # SUBSTITUTIONS nearly halved, 4.14% -> 2.15% -- the error class users
+      # report as "it gets the word wrong". Deletions and coverage also improve
+      # slightly. The old reason for `false` (a 2024 model once changed a
+      # correct phrase, judged on four utterances) does not survive that.
+      # BUT IT COSTS THE THING THE DESIGN SYSTEM IS FOR. Read-ahead, measured
+      # through live playback with `scripts/studio_probe.py`:
+      #   delay 1.75s  verifier off    0 ms   FAIL
+      #   delay 1.75s  verifier on    47 ms   FAIL
+      #   delay 3.20s  verifier off  583 ms   OK
+      #   delay 3.20s  verifier on   191 ms   FAIL
+      # At the budget that makes 2.2.1 work, the endpoint pass takes 583 ms
+      # down to 191. Better text with no read-ahead is the chunk-64 trade this
+      # project already refuses, and read-ahead is the accessibility feature,
+      # not a nicety. RTF 0.217 -> 0.570 and cold start 2.1s -> 8.2s besides.
+      # Turn it on only for a use where lag does not matter (captioning a
+      # recording), never for the live booth.
       verifier_enabled: false
       verifier_engine: whisper
       verifier_whisper:
@@ -411,9 +448,17 @@ live:
         compute_type: int8
         beam_size: 5
         cpu_threads: 4
-      # greedy beats modified_beam_search here, against the model card's
-      # own table. Measured on 120 FLEURS clips.
+      # GREEDY IS THE ONLY METHOD THIS MODEL HAS, not a tuning choice, and
+      # trying the alternative takes the server down rather than scoring worse:
+      # sherpa-onnx's NeMo transducer implementation aborts the process on load
+      # with "Unsupported decoding method: modified_beam_search" (verified
+      # 2026-09-04 against the shipped 1.13.5). The note that used to sit here
+      # -- that greedy beat modified_beam_search on 120 FLEURS clips -- was
+      # measured on the 174M Zipformer this replaced on 2026-08-21, and read as
+      # an invitation to re-run an A/B that now crashes a booth.
       decoding_method: greedy_search
+      # Dead for greedy; kept only for the Zipformer revert path documented
+      # above, which does read it.
       streaming_max_active_paths: 8
       # The TIMIT first-phone sidecar maps English phones to English
       # letters.
@@ -439,9 +484,57 @@ live:
       streaming_model_dir: assets/streaming-nemotron35-multi-1120ms
       # THE LANGUAGE IS A PER-STREAM OPTION, NOT A RECOGNIZER ARGUMENT.
       streaming_language: auto
+      # THE SESSION IS KOREAN + ENGLISH, THE MODEL KNOWS 40 LOCALES. `auto` is
+      # re-decided at every endpoint (each reset is a fresh stream), and on
+      # short utterances it sometimes picks a neighbour: measured on FLEURS
+      # through this profile, ~1% of 2.5 s segments leak Kana on Korean audio
+      # (`おいり 사회의 본질`) or Arabic on English audio (`استهلك a dinosau`),
+      # always as a prefix the model then recovers from. Words whose letters
+      # are MAJORITY outside these scripts are dropped before publication --
+      # they are mis-decode noise, not content, so nothing real is lost.
+      # Numbers and punctuation are script-neutral and always pass. Only this
+      # profile carries the key: the pinned profiles cannot leak.
+      allowed_scripts: [hangul, latin]
+      # LOWER THAN `ko` BECAUSE ONE VALUE HAS TO SERVE BOTH SCRIPTS. Swept on
+      # 50 clips of each set through this profile:
+      #   KO  0.0 CER 7.23% del 1.74% cov 0.987 | 2.0 CER 6.43% del 1.07% cov 0.993
+      #       3.0 CER 7.94% del 0.80% cov 1.013
+      #   EN  0.0 WER 8.97% del 1.21% cov 1.002 | 2.0 WER 9.72% del 0.93% cov 1.008
+      #       3.0 WER 14.95% del 0.93% cov 1.050
+      # 2.0 is strictly better on Korean (CER and recall both) and costs English
+      # 0.75 WER points for 23% fewer deletions. 3.0 is what `ko` ships and is
+      # NOT safe here: it takes English to 14.95%.
+      blank_penalty: 2.0
+      # Same weights, same 1120 ms chunk, same read-ahead problem as `ko`.
+      display:
+        read_ahead_delay_s: 3.20
       # One authoritative stream.
       draft_enabled: false
-      verifier_enabled: false
+      # THE ENGLISH ENDPOINT VERIFIER, GATED TO ENGLISH UTTERANCES (2026-09-04).
+      # Off until now, and that made every `multi` vs `en` comparison a
+      # comparison of two DIFFERENT PIPELINES rather than of two sets of model
+      # weights: `en` inherits this lane, `multi` went without it. MEASURED on
+      # 120 FLEURS en_us and 120 FLEURS ko_kr clips:
+      #   EN  en profile          5.82% WER  del 0.98%  sub 4.26%
+      #   EN  multi, verifier off 8.95% WER  del 1.29%  sub 6.48%
+      #   EN  multi, THIS         6.25% WER  del 1.05%  sub 4.69%
+      #   KO  ko profile          7.52% CER  del 3.01%  0/120 silent
+      #   KO  multi, THIS         7.96% CER  del 3.17%  0/120 silent
+      # The lane is worth 2.70 WER points on English and closes 86% of the gap
+      # to the dedicated English profile; what it recovers is almost entirely
+      # SUBSTITUTIONS, with deletions and coverage near identical either way --
+      # the stream hears the words and spells them wrong, which is exactly the
+      # error class a whole-phrase pass exists to fix. Korean is unharmed: the
+      # residual 0.44 points against the `ko` profile is auto-detect versus
+      # pinning, which this profile exists to do and which was already measured.
+      # `verifier_latin_only` is what makes it safe: the verifier is an English
+      # model that replaces the WHOLE utterance, so any Hangul in the hypothesis
+      # disqualifies it. See `_verifier_skips` in live.py -- and note that
+      # skipping it also has to select the no-verifier EMISSION path, or the
+      # skipped utterance is never finalized at all (that bug measured 120/120
+      # Korean clips silent).
+      verifier_enabled: true
+      verifier_latin_only: true
       decoding_method: greedy_search
       # Korean is the harder script for the shared diarizer, and the
       # multilingual CAM++ embedding is the one that covers both.
@@ -452,6 +545,17 @@ live:
         enabled: false
   # Fast model drives revisable white words; accurate model alone locks color
   # and writes durable events. Both run faster than real time on the target M1.
+  # RECALL KNOB, PER PROFILE. Subtracted from the blank logit every frame, so a
+  # positive value makes the transducer less willing to emit nothing. It buys
+  # COVERAGE with insertions, which is the trade this stage wants: a wrong word
+  # is a caption, a dropped word is a hole the viewer cannot see and cannot ask
+  # about. Swept 2026-09-04 on FLEURS, verifier off on every arm so the column
+  # measures what the STREAM emits.
+  #   EN on `en`   0.0  WER  8.36%  del 1.52%  cov 1.000
+  #                1.0  WER  7.90%  del 1.14%  cov 1.005   <- strictly better
+  #                2.0  WER  9.04%  del 0.76%  cov 1.021
+  # 1.0 is not a trade at all here: it improves WER AND recall together.
+  blank_penalty: 1.0
   draft_model_dir: assets/streaming-nemotron-en-160ms
   streaming_model_dir: assets/streaming-nemotron-en-1120ms
   verifier_model_dir: assets/parakeet-unified-en-offline
@@ -579,7 +683,24 @@ live:
     short_stable_min_margin: 0.12
     short_stable_max_duration_s: 1.3
     min_signal_quality: 0.25        # optional 0..1 update-quality floor
-    direction_prior_weight: 0.05    # optional direction contribution (weak prior only)
+    # THE RATIO BETWEEN THE VOICE ALGORITHM AND THE DIRECTION SENSOR, 0..1.
+    # The blend in `_score` is confidence = (1 - w) * embedding + w * direction,
+    # so this is the direction sensor's SHARE of a speaker-match decision:
+    # 0 = voice only (the shipped default), 0.5 = equal, up to 0.90.
+    # WHY IT EXISTS: on real spontaneous speech the voice embedding flickers --
+    # measured on Korean dialogue, 18% of words are attributed to one speaker
+    # mid-turn and CORRECTED at the endpoint, because a short segment matches
+    # the wrong enrolled voice confidently. The mic array's bearing fails
+    # DIFFERENTLY -- it is steady across a turn -- so weighting it up trades the
+    # embedding's flicker for the array's angular error. ONLY BITES WITH THE
+    # ARRAY ATTACHED: on a local mic or a file there is no bearing and the blend
+    # is skipped, so this does nothing without the hardware node. Pin it per
+    # session with `--direction-trust`. Left low by default because it is
+    # UNMEASURED against two real simultaneous talkers (no labelled array
+    # recording yet); raise it at the booth and watch the compass.
+    direction_trust: 0.05
+    # Deprecated alias, still read if `direction_trust` is absent.
+    direction_prior_weight: 0.05
     # Colour an undecided word from its bearing instead of leaving it grey
     # (the SpeechCompass approach, CHI '25).
     direction_slot_colouring: true
@@ -594,6 +715,17 @@ live:
     direction_override_below: 0.45
     direction_slot_tolerance_deg: 35
     provisional_color_strength: 0.55 # speaker-color share in tentative word color
+    # STABILITY MODE for real spontaneous speech (default OFF). When on, a
+    # mid-stream word is never given a NEW specific speaker: only a `stable`
+    # decision or a continuation of the active speaker paints, otherwise the
+    # word waits grey for the endpoint. Kills "wrong colour -> right colour"
+    # flips in favour of "grey -> right colour". MEASURED on real Korean
+    # dialogue it more than halved flicker on one clip (7.5% -> 3.4%) and barely
+    # moved another (18.2% -> 17.7%) -- a partial win, not a fix -- and its cost
+    # in first-paint correctness is UNMEASURED (no labelled data). Where the mic
+    # array is present, `direction_trust` is the better tool. Off by default so
+    # the shipped behaviour is unchanged.
+    readahead_stability: false
     debug: false                    # add decision details and print session metrics
     # MID-UTTERANCE VERIFICATION WAS BUILT, MEASURED AND REMOVED
     # (2026-08-04).
