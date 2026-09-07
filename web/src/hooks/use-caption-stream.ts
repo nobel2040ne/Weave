@@ -16,6 +16,7 @@ import {
   type LevelEvent,
 } from "@/lib/caption-store";
 import {acousticTimeMs} from "@/lib/motion-timing";
+import {resolveSpeakerLock, type SpeakerLock} from "@/lib/speaker-lock";
 import {
   advanceClock,
   IDLE_CLOCK,
@@ -75,6 +76,15 @@ export interface RuntimeConfig {
   /** Stagger between successive floor-clamped (caught-up) words, so a burst
       released at an endpoint ripples instead of popping as one wall. */
   wordRevealCatchupGapMs: number;
+  /** CWI 2.1. How long a word's colour stays revisable after it FIRST carries
+      a speaker. Past it the painted colour is final. 0 disables. */
+  speakerColorLockMs: number;
+  /** Meter ballistics for the compass bearing: time to cover ~63% of a change.
+      Smooths the VALUE before CSS, which a longer transition cannot do. */
+  compassBearingTauMs: number;
+  /** Draw the dial's second-talker beam marks. OFF: the 4-beam read they come
+      from is not trustworthy on this board. See config.yaml. */
+  compassBeamsEnabled: boolean;
   /** 2.2.1: "full white at 90% opacity" -- against 2.4.1's black box. */
   readAheadColor: string;
   /** The boxless light stage measures white at 1.05:1. See config.yaml. */
@@ -170,6 +180,9 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   readAheadDelayMs: 2500,
   minReadAheadMs: 420,
   wordRevealCatchupGapMs: 60,
+  speakerColorLockMs: 6000,
+  compassBearingTauMs: 400,
+  compassBeamsEnabled: false,
   readAheadColor: "#ffffff",
   readAheadColorLight: "#6e6e73",
   readAheadOpacity: 0.9,
@@ -364,6 +377,10 @@ export function useCaptionStream({reducedMotion}: StreamOptions) {
   const frozenTextRef = useRef(0);
   // id -> the text the word was WEARING when the playhead reached it.
   const settledTextRef = useRef(new Map<string, string>());
+  // id -> the speaker it was FIRST given, and when. Colour's freeze runs on a
+  // different clock from text's: see the header of `speaker-lock.ts`.
+  const speakerLockRef = useRef(new Map<string, SpeakerLock>());
+  const frozenSpeakerRef = useRef(0);
   const rearmedWordsRef = useRef(0);
   const minReadAheadRef = useRef(Number.POSITIVE_INFINITY);
   const eventIdRef = useRef(0);
@@ -469,13 +486,35 @@ export function useCaptionStream({reducedMotion}: StreamOptions) {
       frozenTextRef.current += 1;
       return {...word, text: settled};
     };
+  /* ...AND THE SAME FOR COLOUR, ON ITS OWN CLOCK.
+     Only `speaker` is rewritten. `speaker_status` is left alone deliberately:
+     the store merges on SPEAKER_RANK, so letting the status advance to
+     `corrected` while the speaker itself is pinned is what makes the refusal
+     stick through the merge. Rewriting the status instead would rank the
+     incoming word DOWN and reopen the very churn this closes. */
+  const freezeSpeaker = <T extends {speaker?: string | null}>(word: T): T => {
+      const key = wordKey(word as unknown as CaptionWord);
+      const {speaker, lock, frozen} = resolveSpeakerLock(
+        speakerLockRef.current.get(key),
+        word.speaker,
+        Date.now(),
+        runtimeRef.current.speakerColorLockMs,
+      );
+      if (lock) speakerLockRef.current.set(key, lock);
+      if (!frozen) return word;
+      frozenSpeakerRef.current += 1;
+      return {...word, speaker};
+    };
+  const freezeWord = <T extends {text?: string; speaker?: string | null}>(
+      word: T,
+    ): T => freezeSpeaker(freezeText(word));
     if (Array.isArray(event.words)) {
-      event = {...event, words: event.words.map(freezeText)};
+      event = {...event, words: event.words.map(freezeWord)};
     } else if (typeof event.text === "string") {
       // `cue`/`commit`/`word` may carry a single word at the top level rather
       // than in a `words` array. Missing this path let endpoint punctuation
       // ("it" -> "it,", "okay" -> "okay?") still rewrite coloured captions.
-      event = freezeText(event as CaptionEvent & {text: string});
+      event = freezeWord(event as CaptionEvent & {text: string});
     }
     pendingRef.current.push({event, id});
     if (flushFrameRef.current === 0) {
@@ -769,6 +808,7 @@ export function useCaptionStream({reducedMotion}: StreamOptions) {
           // Revisions REJECTED because the playhead had already passed the
           // word. A healthy figure; zero would mean the invariant is unused.
           frozenTextRevisions: frozenTextRef.current,
+          frozenSpeakerRevisions: frozenSpeakerRef.current,
           rearmedWords: rearmedWordsRef.current,
           playheadMs: Number.isFinite(playhead) ? playhead : null,
           newestAcousticMs: Number.isFinite(newestAcousticMs(

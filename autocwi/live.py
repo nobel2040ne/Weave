@@ -6548,6 +6548,27 @@ def _studio_runtime_config(
         "wordRevealCatchupGapMs": round(
             float(display.get("word_reveal_catchup_gap_s", 0.06)) * 1000
         ),
+        # CWI 2.1. How long a word's colour stays revisable after it FIRST
+        # carries a speaker. Past it the painted colour is final, so an
+        # endpoint correction cannot repaint text the viewer has already read.
+        # Keyed on the first attribution, NOT on arrival: grey is `speaker:
+        # null` and attribution lands well after the word turns.
+        "speakerColorLockMs": round(
+            float(display.get("speaker_color_lock_s", 6.0)) * 1000
+        ),
+        # Meter ballistics for the compass BEARING, the direction channel's
+        # equivalent of `useMeterBallistics` on the level channel. Smooths the
+        # value before CSS sees it; a longer transition cannot converge against
+        # the event period. See config.yaml.
+        "compassBearingTauMs": round(
+            float(display.get("compass_bearing_tau_ms", 400))
+        ),
+        # The dial's second-talker beam marks. Default OFF: the 4-beam control
+        # read is unreliable on this board and its plausible-looking corrupt
+        # values pass the range check. See config.yaml.
+        "compassBeamsEnabled": bool(
+            display.get("compass_beams_enabled", False)
+        ),
         "readAheadColor": read_ahead.get("color", "#FFFFFF"),
         # Same read-ahead, legible on the boxless light stage. See config.yaml.
         "readAheadColorLight": read_ahead.get("color_light", "#6E6E73"),

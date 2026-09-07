@@ -1230,53 +1230,27 @@ button {
   inset: 5px;
   border-radius: 50%;
   transform: rotate(var(--direction-angle));
-  transition: transform 180ms cubic-bezier(.2,.72,.24,1);
+  /* Opacity eases too: at a handover one arrow dims while the next brightens,
+     and snapping both made the crossing read as a flicker on top of the
+     movement. */
+  transition: transform 180ms cubic-bezier(.2,.72,.24,1), opacity 220ms ease;
 }
 
-/* ONE STABLE ARROW PER SPEAKER, in that speaker's colour. A full-size rotating
-   layer with the arrow drawn up its centre, so it scales with the dial and its
-   angle needs no per-size maths -- the same trick `.compass-tick` uses. */
-.compass-arrow {
-  position: absolute;
-  inset: 5px;
-  border-radius: 50%;
-  color: var(--arrow-color);
-  transform: rotate(var(--arrow-angle));
-  /* The bearings are stable, so this only eases a genuine re-placement, not
-     the per-talker jump the live needle had. */
-  transition: transform 320ms cubic-bezier(.2,.72,.24,1);
-  pointer-events: none;
+/* THE ARROW TAKING OVER A ZONE IS PLACED ON THE SEAM, NOT ANIMATED INTO IT.
+   It has been parked exactly where the outgoing arrow is standing, so easing
+   there from wherever it was resting would draw a swing the talker never made
+   -- which is the stutter at the crossing. One update later `data-entering`
+   is false again and it eases from the seam to the real bearing. */
+.compass-direction[data-entering="true"] {
+  transition: opacity 220ms ease;
 }
-.compass-arrow[data-stale="true"] { opacity: .4; }
-/* The shaft: a coloured line from the centre to just short of the rim. */
-.compass-arrow::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 8px;
-  width: 2px;
-  height: calc(50% - 8px);
-  background: linear-gradient(
-    to bottom,
-    currentColor,
-    color-mix(in srgb, currentColor 30%, transparent));
-  transform: translate(-50%, 0);
-  border-radius: 2px;
-}
-/* The head: a triangle at the rim, pointing outward. */
-.compass-arrow::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 1px;
-  width: 0;
-  height: 0;
-  transform: translateX(-50%);
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-bottom: 8px solid currentColor;
-  filter: drop-shadow(0 0 3px color-mix(in srgb, currentColor 55%, transparent));
-}
+
+/* THE DIAL DRAWS EXACTLY THREE ARROWS, ONE PER 120 DEG ZONE -- `.compass-
+   direction`, and nothing else. The per-speaker arrow set that used to live
+   here was deleted 2026-09-07: with the zone arrows in place it put up to six
+   identical arrowheads on a 152px dial, and "how many arrows are there" needs
+   a fixed answer for the shape to mean anything. Speaker positions are still
+   on the rim as `.compass-slot` arcs. */
 
 /* Standing speaker positions, after SpeechCompass's minimap (CHI '25). */
 .compass-slot {
@@ -1328,7 +1302,9 @@ button {
   left: 50%;
   top: 50%;
   width: 1px;
-  height: calc(50% - 7px);
+  /* Stops at the head rather than running under it: 8px of triangle plus its
+     1px seat. */
+  height: calc(50% - 9px);
   background: linear-gradient(
     to bottom,
     color-mix(in srgb, currentColor 14%, transparent),
@@ -1343,22 +1319,49 @@ button {
   opacity: .34;
 }
 
+/* THE TIP IS AN ARROWHEAD, NOT A DOT (2026-09-07, at the user's request).
+   A 9px disc said "the bearing is that way" without saying which way, so the
+   viewer had to find the dot and then work out which end of the line it sat
+   on. A head states the direction in the shape itself, which is what makes
+   these read as arrows rather than as lines with beads on them. 10x8, sitting
+   1px inside the rim. */
 .compass-direction i {
   position: absolute;
   left: 50%;
-  top: -2px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: currentColor;
+  top: 1px;
+  width: 0;
+  height: 0;
+  border-radius: 0;
+  background: none;
   opacity: 0;
   transform: translateX(-50%);
-  box-shadow: 0 0 12px currentColor;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 8px solid currentColor;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, currentColor 55%, transparent));
 }
 
 .voice-compass[data-direction="known"] .compass-direction i {
   opacity: .55;
 }
+
+/* THREE SECTOR NEEDLES SHARE THIS CLASS, AND ONLY ONE OF THEM IS THE PRESENT.
+   Each needle owns 120 deg and cannot leave it, so a change of talker lights a
+   different line instead of sweeping one across the dial -- see
+   `compass-sectors.ts`. The two that are not live are where somebody last
+   spoke from: still true, no longer a claim about now, so they are dimmed the
+   way a stale speaker arc is rather than removed. Removing them would throw
+   away the only record of the other two thirds of the room.
+   The ACTIVE needle keeps its existing brightness untouched: it was softened
+   deliberately when the per-speaker arrows took over "who is where", and
+   raising it here would undo that. */
+.compass-direction[data-active="false"] { opacity: .34; }
+/* A ZONE THAT HAS NEVER BEEN HEARD STILL SHOWS ITS ARROW, at rest in the
+   middle of its third and faint enough that it cannot be mistaken for a
+   bearing. Drawing nothing there was the first attempt: with one talker
+   sitting still only one zone is ever heard, so only one arrow appeared and
+   the dial looked exactly as it had before. */
+.compass-direction[data-heard="false"] { opacity: .16; }
 
 /* A NEEDLE PER LIVE TALKER BEAM. Same geometry as `.compass-direction` -- a
    full-size rotating layer with the mark at its top edge -- so it scales with

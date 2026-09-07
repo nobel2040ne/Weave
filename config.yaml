@@ -101,6 +101,47 @@ display:
   # the recognizer releases words in bursts. Nothing is predicted.
   read_ahead_delay_s: 1.75
   min_read_ahead_ms: 420
+  # CWI 2.1. How long a word's colour stays revisable after it FIRST gets a
+  # speaker -- not after it appears, because `speaker: null` is grey and
+  # attribution lands at a median 4.48s against text at 0.62s, so an
+  # arrival-keyed window would freeze most words grey. Past this the endpoint
+  # pass may still correct the tracker; it just may not repaint a line the
+  # viewer has already read and attributed. Set to 0 to disable.
+  #
+  # 6.0s covers the measured attribution lag (durable at 4.48s, endpoint
+  # verification at 1.1-3.2s) with headroom, so a genuine correction still
+  # lands. Raise it if real corrections are being refused; lower it if colour
+  # still changes under the eye. DISPLAY ONLY -- `SpeakerTracker` and every
+  # attribution probe see the unfrozen answer, because colour STABILITY and
+  # colour CORRECTNESS are separate questions and this moves only the first.
+  speaker_color_lock_s: 6.0
+  # How long the compass arrow takes to cover ~63% of a change in bearing.
+  # `direction_deg` arrives every level_event_period_s (~120 ms) and the array
+  # HOLDS its last bearing while the room is quiet, so the raw channel is flat
+  # stretches broken by steps -- which reads as "sits still, then jumps".
+  # A LONGER CSS TRANSITION DOES NOT FIX THIS: measured on the level channel
+  # 2026-08-13, a 340 ms ease against a 120 ms event period never converges and
+  # the mark just chases. The value has to be smoothed before it reaches CSS.
+  # 0 disables. UNMEASURED against a real room -- raise it if the arrow still
+  # jumps, lower it if it lags the talker. Judge the MEDIAN frame-to-frame step,
+  # not the p90: the p90 is genuine speaker changes, which the dial should show.
+  compass_bearing_tau_ms: 400
+  # The dial's second-talker beam marks. OFF since 2026-09-07, because the
+  # 4-beam read they come from is not trustworthy on this board: measured
+  # directly, AEC_SPENERGY_VALUES and AEC_AZIMUTH_VALUES return each other's
+  # payloads and values orders of magnitude out of range (669931 for an energy
+  # capped at 1000; 229120 for a value in radians), and the 4-beam table
+  # alternates 0-live/4-live on exactly every other read -- the artifact
+  # docs/HARDWARE.md describes, not four beams.
+  # The single DOA_VALUE survives the same unreliability because it is one
+  # range-checked scalar re-polled ~8x/sec; a 4-value table does not.
+  # THE DANGER IS THE PLAUSIBLE ONES: [0.0, 0.203, 1.479, 3.193] passes the
+  # range check while being the wrong command's payload, so the dial draws a
+  # confident line at a second talker who is not there -- which is exactly what
+  # "a corrupt read must become an absent field, never a confident one"
+  # forbids. Turn back on only after the control read is fixed AND two real
+  # simultaneous talkers have been measured.
+  compass_beams_enabled: false
   intonation_envelope_samples: 8   # readings of a word's own audio, per word
   word_motion_duration_s: 0.42
   word_motion_max_duration_s: 1.05

@@ -59,6 +59,11 @@ import {
   HOLD_ENVELOPE_EMPHASIS,
   naturalMotionDurationMs,
 } from "@/lib/motion-timing";
+import {
+  initialSectorState,
+  updateSectorNeedles,
+} from "@/lib/compass-sectors";
+import {initialBearingState, smoothBearing} from "@/lib/bearing-ballistics";
 import {baselineOffsetEm, formatBaselineEm} from "@/lib/glyph-metrics";
 import {waveGrain, wordIsWide} from "@/lib/hangul";
 import {FILM_PEAK_FRACTION, fallDurationMs} from "@/lib/motion-timing";
@@ -685,9 +690,6 @@ const MotionWord = memo(function MotionWord({
    in the node, not here. */
 const COMPASS_BEARING_OFFSET_DEG = 180;
 
-/* How many per-speaker arrows the dial draws. Three reads as a room; more
-   turns into a star-burst. The arcs still mark every speaker beyond this. */
-const COMPASS_ARROWS = 3;
 /* The XVF3800 steers exactly two talker beams; the other two slots are the
    free-running and auto-select beams, which can be echoing one of them. */
 const COMPASS_BEAMS = 2;
@@ -786,11 +788,18 @@ function VoiceCompass({
   level,
   color,
   speakerColors,
+  bearingTauMs,
+  beamsEnabled,
   sound,
 }: {
   level: LevelEvent;
   color: string;
   speakerColors?: SpeakerColorMap;
+  /** Ballistics for the bearing; see `bearing-ballistics.ts`. 0 disables. */
+  bearingTauMs: number;
+  /** Draw the second-talker beam marks. OFF while the 4-beam read is
+      untrustworthy -- see config.yaml. */
+  beamsEnabled: boolean;
   sound?: {label?: string; category?: string} | null;
 }) {
   const rawVolume = clamp((number(level.rms_db, -72) + 60) / 45, 0, 1);
@@ -835,15 +844,60 @@ function VoiceCompass({
   const shownBearing = directionMeasured
     ? compassBearing(direction)
     : heldBearing ?? 0;
+  /* THREE NEEDLES, ONE PER 120 DEG SECTOR (2026-09-07, at the user's request).
+     One needle over the whole circle meant every change of talker was a sweep
+     across the dial -- 350deg to 10deg is 20deg of room and 340deg of travel,
+     and the eye follows the travel rather than the bearing. Each needle now
+     owns a third of the dial and cannot leave it, so the longest move any of
+     them can make is 120deg and a jump between sectors is a different line
+     lighting up rather than one line crossing the middle. Hysteresis at the
+     edges keeps a talker sitting on a boundary from alternating needles; see
+     `compass-sectors.ts`. Only the LIVE needle changed -- the per-speaker
+     arrows, the beams and the arcs are untouched. */
+  /* METER BALLISTICS FOR THE BEARING, ahead of the zone routing (2026-09-07,
+     at the user's request: the arrow "sits still then suddenly jumps").
+     `direction_deg` arrives every ~120 ms and the array HOLDS its last bearing
+     through a quiet room, so the raw channel is flat runs broken by steps. The
+     needle's 180 ms CSS ease cannot absorb that -- a transition longer than the
+     event period never converges, which this project already measured on the
+     level channel. Smoothing the VALUE is the fix; see `bearing-ballistics.ts`.
+     Feeding the SMOOTHED bearing to the zones is deliberate: a noisy bearing on
+     a zone edge would otherwise hand the arrow back and forth on noise alone. */
+  const bearingRef = useRef(initialBearingState);
+  const [sectors, setSectors] = useState(initialSectorState);
+  useEffect(() => {
+    const raw = Number.isFinite(direction) ? compassBearing(direction) : null;
+    bearingRef.current = smoothBearing(
+      bearingRef.current,
+      raw,
+      performance.now(),
+      bearingTauMs,
+    );
+    // A held bearing must not keep re-arming the zones as live, or a pause
+    // would read as continuous speech from wherever the talker last was.
+    const eased = raw === null ? null : bearingRef.current.deg;
+    setSectors((current) => updateSectorNeedles(current, eased));
+  }, [direction, bearingTauMs]);
   /* Absent means the array measured nothing, so no needle is drawn -- the
      compass may hold a stale PRIMARY bearing, but it must not invent a second
      talker who was never heard. */
+  /* THE BEAM MARKS ARE OFF BY DEFAULT (2026-09-07, at the user's request:
+     "헷갈림"). Measured directly on the board, the 4-beam control read returns
+     the wrong command's payload and values orders of magnitude out of range,
+     and the table alternates 0-live/4-live every other read -- the artifact
+     `docs/HARDWARE.md` names, not four beams. The single `DOA_VALUE` survives
+     the same unreliability only because it is one range-checked scalar polled
+     ~8x/sec. The danger is the corrupt reads that LOOK fine: they pass the
+     range check and the dial then draws a confident line at a second talker
+     who is not there. Gated at the source, so nothing downstream can revive
+     a stale bearing. */
   const beamBearings = useMemo(() => {
+    if (!beamsEnabled) return [];
     const raw = level.beam_bearings_deg;
     return Array.isArray(raw)
       ? raw.map(Number).filter((b) => Number.isFinite(b)).slice(0, COMPASS_BEAMS)
       : [];
-  }, [level.beam_bearings_deg]);
+  }, [level.beam_bearings_deg, beamsEnabled]);
   const style: CSSVars = {
     "--orb-color": color,
     /* THE PULSE HAS A RANGE WORTH SEEING. */
@@ -859,11 +913,6 @@ function VoiceCompass({
     "--delivery-stretch-y": (0.94 + force * 0.15).toFixed(3),
     "--delivery-energy": (0.18 + force * 0.62 + attack * 0.20).toFixed(3),
     "--delivery-texture": texture.toFixed(3),
-    /* The unmeasured fallback is 0deg ON SCREEN, not through the offset: it
-       means "assume the talker is at the front of the case", which is where the
-       front tick is drawn. Passing it through would aim the default needle at
-       the back. */
-    "--direction-angle": `${shownBearing}deg`,
   };
   // Standing speaker positions, the SpeechCompass minimap idea: the live dot
   // is where sound is arriving NOW, these are where each speaker sits. Colours
@@ -950,38 +999,16 @@ function VoiceCompass({
           />
         );
       })}
-      {/* AN ARROW PER SPEAKER, NOT ONE NEEDLE THAT CHASES THE TALKER
-          (2026-09-05, at the user's request). The single live needle tracks the
-          INSTANTANEOUS bearing, so it flips to whoever speaks and reads as
-          constant jitter. Each speaker's own standing bearing is stable, so a
-          fixed arrow per speaker -- in that speaker's colour -- lets the viewer
-          read the room at a glance instead of following a jumping line. Capped
-          at COMPASS_ARROWS so a large cast cannot turn the dial into a
-          star-burst; the arcs still mark everyone. Only appears with the mic
-          array (no bearings without it), exactly like the needle. */}
-      {slots.slice(0, COMPASS_ARROWS).map((bearing, index) => {
-        const angle = compassBearing(Number(bearing));
-        const stale = Boolean(marks.length && marks[index]?.stale);
-        return (
-          <span
-            key={`arrow-${index}`}
-            className="compass-arrow"
-            data-stale={stale ? "true" : "false"}
-            style={{
-              "--arrow-angle": `${angle.toFixed(1)}deg`,
-              "--arrow-color": speakerColors
-                ? speakerColor(slotSpeaker(index), speakerColors)
-                : "var(--accent)",
-            } as CSSVars}
-          />
-        );
-      })}
-      {/* THE LIVE NEEDLE. With per-speaker arrows now carrying "who is where",
-          this is only the CURRENT arrival, kept subtle so it no longer
-          dominates. A 9px dot on the rim asked the viewer to find it and then
-          work out which way it lay; a line from the centre states the bearing
-          the way a compass has always stated it. The dot stays at its tip --
-          it is what carries the ACTIVE speaker's colour. */}
+      {/* THE PER-SPEAKER ARROWS ARE GONE (2026-09-07, at the user's request:
+          "화살표 개수는 무조건 딱 3개"). They were three arrowheads placed at
+          each speaker's standing bearing, and beside the three ZONE arrows the
+          dial drew up to six of the same shape -- so "how many arrows" stopped
+          having an answer, and neither set could be read at a glance. The dial
+          now draws exactly three arrows, always, one per third of the circle.
+          "Who is where" has not been lost: `.compass-slot` still marks every
+          speaker on the rim, in that speaker's colour and with its spread as
+          the arc's width, which is the more honest carrier for it anyway --
+          an arc states its own uncertainty and an arrowhead does not. */}
       {/* WHAT IS HAPPENING IN THE ROOM, IN THE MIDDLE OF THE INSTRUMENT THAT
           DESCRIBES THE ROOM (2026-08-13, at the user's request). A non-speech
           sound is not a word -- it has no speaker, no colour and no place in a
@@ -1013,7 +1040,26 @@ function VoiceCompass({
           } as CSSVars}
         ><b /><i /></span>
       ))}
-      <span className="compass-direction"><b /><i /></span>
+      {/* THREE ARROWS, ONE PER ZONE, ALWAYS ON THE DIAL. Each owns a third of
+          the circle and cannot leave it, so a change of talker lights a
+          different arrow instead of sweeping one across the middle. An unheard
+          zone rests at its centre and is drawn faint -- it is the zone saying
+          "nothing from here", not a claim that somebody is there. `data-heard`
+          carries that distinction; `data-active` marks the live one. */}
+      {sectors.needles.map((needle, index) => (
+        <span
+          key={`sector-${index}`}
+          className="compass-direction"
+          data-active={sectors.latest === index ? "true" : "false"}
+          data-heard={needle.heard ? "true" : "false"}
+          data-entering={
+            sectors.entering && sectors.latest === index ? "true" : "false"
+          }
+          style={{
+            "--direction-angle": `${needle.angleDeg.toFixed(1)}deg`,
+          } as CSSVars}
+        ><b /><i /></span>
+      ))}
       {/* `.compass-texture` and `.compass-pitch` are gone with them. Both were
           voice channels -- brightness and F0 -- and both are on screen already
           as the caption's own texture and weight under CWI 2.3. The dial was
@@ -2102,6 +2148,8 @@ export function LiveStudio() {
           <div className="compass-layout">
             <VoiceCompass level={level} color={activeColor}
                           speakerColors={speakerColors}
+                          bearingTauMs={runtime.compassBearingTauMs}
+                          beamsEnabled={runtime.compassBeamsEnabled}
                           sound={speechActive ? null : model.sound} />
             {/* THE DIAL IS THE WHOLE READOUT NOW (2026-08-13).
                 It has lost, in order: `Direction` (a label on a number that

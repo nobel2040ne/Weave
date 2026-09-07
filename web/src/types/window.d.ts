@@ -18,6 +18,7 @@ declare global {
         lateWords: number;
         rearmedWords: number;
         frozenTextRevisions: number;
+        frozenSpeakerRevisions: number;
         playheadMs: number | null;
         newestAcousticMs: number | null;
         clockEpoch: number;
