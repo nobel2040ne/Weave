@@ -272,16 +272,45 @@ def probe_doa_usb(watch: bool) -> bool:
 
     print("  The control lane is OPEN. DoA needs no host binary.")
     reps = 15 if watch else 4
-    print(f"\n    {'bearing':>9}  {'speech':>6} | beam azimuths (deg)")
+    # Beam order is fixed by the firmware: beam 1, beam 2, free-running,
+    # auto-select. The first two are the independently steered talker beams, so
+    # two of them carrying speech AT DIFFERENT BEARINGS is the whole question
+    # "can this array hear two people at once" -- answered by measurement here
+    # rather than by the single auto-select bearing the node currently ships.
+    names = ("b1", "b2", "free", "auto")
+    print(f"\n    {'bearing':>9}  {'spch':>4} | {'beam azimuths (deg)':^33}"
+          f" | {'speech energy':^27} | live beams")
+    print(f"    {'':>9}  {'':>4} | " + " ".join(f"{n:>7}" for n in names)
+          + " | " + " ".join(f"{n:>5}" for n in names) + " |")
     voiced = 0
+    multi = 0
+    talker_multi = 0
     for _ in range(reps):
         bearing = array.read_bearing()
-        az = " ".join(f"{a:7.1f}" for a in array.beam_azimuths_deg())
+        azimuths = array.beam_azimuths_deg()
+        energies = array.beam_speech_energy()
+        az = " ".join(f"{a:7.1f}" for a in azimuths)
+        if energies is None:
+            # Range-checked out: reading two commands close together
+            # intermittently returns one's data for the other. Say so; a
+            # silently dropped row would understate how often this happens.
+            en, live = "  (corrupt read — discarded)      ", ""
+        else:
+            en = " ".join(f"{e:5.2f}" for e in energies)
+            hot = [i for i, e in enumerate(energies) if e > 0.0]
+            live = " ".join(names[i] for i in hot) or "-"
+            if len(hot) >= 2:
+                multi += 1
+            # Only beams 1 and 2 are separately steered talkers; the free and
+            # auto beams can echo one of them, so counting all four would
+            # overstate separation.
+            if energies[0] > 0.0 and energies[1] > 0.0:
+                talker_multi += 1
         if bearing is None:
-            print(f"    {'(omitted)':>9}  {0:>6} | {az}")
+            print(f"    {'(omitted)':>9}  {0:>4} | {az} | {en} | {live}")
         else:
             voiced += 1
-            print(f"    {bearing:8.1f}°  {1:>6} | {az}")
+            print(f"    {bearing:8.1f}°  {1:>4} | {az} | {en} | {live}")
         time.sleep(0.4)
 
     print()
@@ -294,6 +323,20 @@ def probe_doa_usb(watch: bool) -> bool:
         print("  reported as omitted above — correctly. This run says the lane")
         print("  reads; it does NOT say the bearing tracks a voice. That needs")
         print("  somebody talking and moving around the array.")
+    print()
+    if talker_multi:
+        print(f"  BOTH TALKER BEAMS carried speech on {talker_multi}/{reps} reads.")
+        print("  Compare their azimuth columns (b1, b2): two DIFFERENT bearings")
+        print("  is the array separating two people in space. The same bearing")
+        print("  on both is one talker held by two beams, which is not.")
+    elif multi:
+        print(f"  Several beams were live on {multi}/{reps} reads, but never b1")
+        print("  and b2 together — that is one talker echoed onto the free and")
+        print("  auto beams, NOT two directions.")
+    else:
+        print("  Never more than one beam live. With two people talking at")
+        print("  different angles this is the read that says the array cannot")
+        print("  separate them; with one talker it says nothing either way.")
     array.close()
     return True
 

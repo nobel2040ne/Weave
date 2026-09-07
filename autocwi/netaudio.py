@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import struct
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Iterator, Sequence
 
 import numpy as np
 
@@ -90,11 +90,21 @@ def pack_hello(sample_rate: int, block: int, node: str = "weave-node") -> bytes:
     })
 
 
-def pack_doa(audio_seq: int, doa_deg: float, confidence: float = 1.0) -> bytes:
-    """Frame a direction observation against the audio block it was measured on."""
+def pack_doa(audio_seq: int, doa_deg: float, confidence: float = 1.0,
+             beams: Sequence[float] | None = None) -> bytes:
+    """Frame a direction observation against the audio block it was measured on.
+
+    ``beams`` is OPTIONAL and carries every steered talker beam that was
+    reporting speech, so a second simultaneous talker survives the wire instead
+    of being collapsed into the dominant bearing. Omitted when empty -- an
+    absent field means nothing was measured, which is the same contract
+    ``doa_deg`` keeps, and a reader that predates this field is unaffected.
+    """
     return pack_json(KIND_DOA, audio_seq, {
         "doa_deg": round(float(doa_deg) % 360.0, 2),
         "confidence": round(float(confidence), 3),
+        **({"beams": [round(float(b) % 360.0, 2) for b in beams]}
+           if beams else {}),
     })
 
 

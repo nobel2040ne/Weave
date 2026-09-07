@@ -67,6 +67,50 @@ class XvfControl:
     # Beam azimuths arrive in radians; anything outside +-2pi is a corrupt read.
     MAX_AZIMUTH_RAD = 7.0
 
+    # Only beams 1 and 2 are independently steered talker beams. The
+    # free-running and auto-select beams can both be echoing one of them, so
+    # counting all four as directions would claim separation that is not there.
+    TALKER_BEAMS = (0, 1)
+
+    def read_beams(self) -> list[tuple[float, float]] | None:
+        """``(azimuth_deg, speech_energy)`` per beam, or None on a corrupt read.
+
+        ONE pair of control reads answers every beam question the node asks.
+        That halves the traffic on a lane polled every 120 ms on a Pi Zero 2 W,
+        and -- the part that matters more -- keeps the two halves consistent:
+        separate read pairs can straddle a beam re-steer and pair an energy
+        with an azimuth the beam no longer has.
+
+        Beam order is beam 1, beam 2, free-running, auto-select. Energy above
+        zero means speech on that beam; see :meth:`beam_speech_energy` for why
+        every value is range-checked rather than spaced out.
+        """
+        energies = self.beam_speech_energy()
+        if energies is None:
+            return None
+        azimuths = self.read("AEC_AZIMUTH_VALUES")
+        if any(abs(a) > self.MAX_AZIMUTH_RAD for a in azimuths):
+            return None                      # corrupt interleaved read
+        import math
+
+        return [(math.degrees(a) % 360.0, e)
+                for a, e in zip(azimuths, energies)]
+
+    def read_talker_bearings(self) -> list[float]:
+        """Bearings of the steered talker beams currently carrying speech.
+
+        Empty when the read was corrupt or no talker beam is live. Two entries
+        at DIFFERENT bearings is the array hearing two people at once, which no
+        single-bearing reading can express; two at the same bearing is one
+        talker held by both beams. This reports what the beams carry and makes
+        no claim about how many people are in the room -- the separation
+        question is answered by comparing the bearings, not by the count.
+        """
+        beams = self.read_beams()
+        if beams is None:
+            return []
+        return [beams[i][0] for i in self.TALKER_BEAMS if beams[i][1] > 0.0]
+
     def read_beam_bearing(self) -> float | None:
         """Bearing from the auto-select beam, gated on that beam's speech energy.
 
@@ -87,15 +131,10 @@ class XvfControl:
         at 8 -- so there is no threshold that buys concentration, and a larger
         one would only look like tuning.
         """
-        energies = self.beam_speech_energy()
-        if energies is None or energies[3] <= 0.0:
+        beams = self.read_beams()
+        if beams is None or beams[3][1] <= 0.0:
             return None
-        azimuths = self.read("AEC_AZIMUTH_VALUES")
-        if any(abs(a) > self.MAX_AZIMUTH_RAD for a in azimuths):
-            return None                      # corrupt interleaved read
-        import math
-
-        return math.degrees(azimuths[3]) % 360.0
+        return beams[3][0]
 
     def beam_speech_energy(self) -> list[float] | None:
         """Per-beam speech energy, or None if the read came back corrupt.

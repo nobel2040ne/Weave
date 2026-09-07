@@ -342,6 +342,11 @@ class NodeLink:
         self.port = port
         self.doa_ttl_s = doa_ttl_s
         self._doa: tuple[float, float] | None = None   # (deg, monotonic stamp)
+        # Every steered talker beam that was reporting speech on the newest
+        # observation, on the SAME TTL as `_doa`. Two entries at different
+        # bearings is the array hearing two people at once; the compass draws
+        # them, and like `_doa` an expired reading becomes absent, not stale.
+        self._beams: tuple[list[float], float] | None = None
         # (source_time, deg) for attribution, which scores a WORD SPAN and so
         # needs the bearing during that span, not the latest one. Bearings are
         # recorded against the source clock the words are timed on; the DoA
@@ -359,9 +364,28 @@ class NodeLink:
             if self._doa is None:
                 return None
             deg, stamp = self._doa
-            if time.monotonic() - stamp > self.doa_ttl_s:
+            # 0 disables expiry: the last measured bearing stays valid until
+            # the next one replaces it, so direction is always on.
+            if self.doa_ttl_s and time.monotonic() - stamp > self.doa_ttl_s:
                 return None
             return deg
+
+    @property
+    def beam_bearings_deg(self) -> list[float] | None:
+        """Live talker-beam bearings, or None once the reading expires.
+
+        None and empty mean the same thing to a caller and both are honest:
+        nothing was measured. Never fabricated, and never held past
+        ``doa_ttl_s`` -- the display may choose to hold a stale bearing, the
+        data may not.
+        """
+        with self._doa_lock:
+            if self._beams is None:
+                return None
+            beams, stamp = self._beams
+            if self.doa_ttl_s and time.monotonic() - stamp > self.doa_ttl_s:
+                return None
+            return list(beams)
 
     def bearing_for_span(self, start_s: float, end_s: float) -> float | None:
         """The array's bearing while this word was spoken, or None.
@@ -472,8 +496,14 @@ class NodeLink:
                 if frame.kind == netaudio.KIND_DOA:
                     body = frame.json()
                     deg = float(body["doa_deg"])
+                    # Optional and absent on a node that predates it, so an
+                    # older Pi checkout keeps working with one bearing.
+                    raw_beams = body.get("beams") or []
+                    beams = [float(b) % 360.0 for b in raw_beams]
                     with self._doa_lock:
                         self._doa = (deg, time.monotonic())
+                        self._beams = ((beams, time.monotonic())
+                                       if beams else None)
                         # `source_start` is where the next audio block lands on
                         # the source clock, so it timestamps this bearing on the
                         # same timeline the word spans use.
@@ -853,6 +883,16 @@ class InputGain:
         direction_source = getattr(self, "direction_source", None)
         if direction_source is not None:
             direction = direction_source()
+        # Every steered talker beam reporting speech right now. Optional and
+        # omitted when empty, exactly like `direction_deg`: absent means the
+        # array measured nothing, and the compass must not invent a second
+        # talker any more than it may invent a first.
+        beams = None
+        beams_source = getattr(self, "beam_bearings_source", None)
+        if beams_source is not None:
+            found = beams_source()
+            if found:
+                beams = [round(float(b), 1) for b in found]
         # Where each speaker slot sits, for the compass to mark. Optional and
         # omitted when empty: the compass shows the CURRENT bearing, and these
         # are the standing positions, which is the part it cannot infer.
@@ -875,6 +915,7 @@ class InputGain:
             "type": "level",
             **({"direction_deg": round(direction, 1)}
                if direction is not None else {}),
+            **({"beam_bearings_deg": beams} if beams else {}),
             **({"speaker_slots_deg": slots} if slots else {}),
             **({"speaker_bearings": marks} if marks else {}),
             "t": round(t, 3),
@@ -6760,7 +6801,16 @@ def run_live(args, cfg: dict, device: str) -> None:
         if host == "127.0.0.1":
             print("[live] --node on 127.0.0.1: only a node on THIS machine can "
                   "connect. Pass --host 0.0.0.0 to accept one over the LAN.")
-        node_link = NodeLink(host=host, port=getattr(args, "node_port", 7338))
+        node_link = NodeLink(
+            host=host, port=getattr(args, "node_port", 7338),
+            # Measured: dropouts run past the old hardcoded 1.5s, so this had
+            # to become tunable at the booth. See `doa_ttl_s` in config.yaml.
+            doa_ttl_s=float(
+                (((cfg.get("live", {}) or {})
+                  .get("speaker_attribution", {}) or {}).get("doa_ttl_s"))
+                or 1.5
+            ),
+        )
     server = broadcaster = None
     if not headless:
         # Page first, language second, models third. Capture has not started
@@ -6896,6 +6946,10 @@ def run_live(args, cfg: dict, device: str) -> None:
         input_gain = InputGain(cfg)
         if node_link is not None:
             input_gain.direction_source = lambda: node_link.direction_deg
+            # Every live talker beam, not just the dominant one, so the compass
+            # can draw a second simultaneous speaker instead of collapsing the
+            # room onto one needle.
+            input_gain.beam_bearings_source = lambda: node_link.beam_bearings_deg
             # Same injection shape for attribution: the tracker's direction
             # prior was plumbed end to end but never fed, so `direction_deg`
             # only ever reached the compass. With an array attached, WHO spoke

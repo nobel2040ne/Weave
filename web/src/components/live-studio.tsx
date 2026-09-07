@@ -688,6 +688,9 @@ const COMPASS_BEARING_OFFSET_DEG = 180;
 /* How many per-speaker arrows the dial draws. Three reads as a room; more
    turns into a star-burst. The arcs still mark every speaker beyond this. */
 const COMPASS_ARROWS = 3;
+/* The XVF3800 steers exactly two talker beams; the other two slots are the
+   free-running and auto-select beams, which can be echoing one of them. */
+const COMPASS_BEAMS = 2;
 
 const compassBearing = (deg: number): number =>
   (((deg + COMPASS_BEARING_OFFSET_DEG) % 360) + 360) % 360;
@@ -817,6 +820,30 @@ function VoiceCompass({
      direction, and knowingly against this project's own standing rule). */
   const directionMeasured = Number.isFinite(direction);
   const directionKnown = true;
+  /* A LAPSED READING HOLDS ITS LAST BEARING; IT DOES NOT SNAP TO THE FRONT
+     (2026-09-07, at the user's request). The array publishes a bearing only
+     while it reports speech, so every pause used to fling the needle back to
+     0deg -- invisible when the talker sits at the front of the case, and a
+     constant snap-home anywhere else. Holding is also the more honest of the
+     two: the last bearing was measured, 0deg never was. It stays dimmed by
+     `data-measured="false"`, which is the claim being withheld, and 0deg
+     remains the fallback only until the FIRST real reading arrives. */
+  const [heldBearing, setHeldBearing] = useState<number | null>(null);
+  useEffect(() => {
+    if (Number.isFinite(direction)) setHeldBearing(compassBearing(direction));
+  }, [direction]);
+  const shownBearing = directionMeasured
+    ? compassBearing(direction)
+    : heldBearing ?? 0;
+  /* Absent means the array measured nothing, so no needle is drawn -- the
+     compass may hold a stale PRIMARY bearing, but it must not invent a second
+     talker who was never heard. */
+  const beamBearings = useMemo(() => {
+    const raw = level.beam_bearings_deg;
+    return Array.isArray(raw)
+      ? raw.map(Number).filter((b) => Number.isFinite(b)).slice(0, COMPASS_BEAMS)
+      : [];
+  }, [level.beam_bearings_deg]);
   const style: CSSVars = {
     "--orb-color": color,
     /* THE PULSE HAS A RANGE WORTH SEEING. */
@@ -836,7 +863,7 @@ function VoiceCompass({
        means "assume the talker is at the front of the case", which is where the
        front tick is drawn. Passing it through would aim the default needle at
        the back. */
-    "--direction-angle": `${directionMeasured ? compassBearing(direction) : 0}deg`,
+    "--direction-angle": `${shownBearing}deg`,
   };
   // Standing speaker positions, the SpeechCompass minimap idea: the live dot
   // is where sound is arriving NOW, these are where each speaker sits. Colours
@@ -968,6 +995,24 @@ function VoiceCompass({
           <i>[{sound.label ?? sound.category}]</i>
         </span>
       ) : null}
+      {/* A NEEDLE PER LIVE TALKER BEAM (2026-09-07, at the user's request).
+          The array steers two beams independently, so two people speaking at
+          once are two bearings -- and `direction_deg` carries only the
+          dominant one, which silently drops the second talker. Drawn thinner
+          and dimmer than the live needle because it IS looser evidence: the
+          beam gate measures circular concentration 0.83 against the VAD
+          gate's 1.00. Two beams on one bearing overlap into a single line,
+          which is the honest picture of one talker held by both; no
+          separation threshold is invented to force them apart. */}
+      {beamBearings.map((bearing, index) => (
+        <span
+          key={`beam-${index}`}
+          className="compass-beam"
+          style={{
+            "--beam-angle": `${compassBearing(bearing).toFixed(1)}deg`,
+          } as CSSVars}
+        ><b /><i /></span>
+      ))}
       <span className="compass-direction"><b /><i /></span>
       {/* `.compass-texture` and `.compass-pitch` are gone with them. Both were
           voice channels -- brightness and F0 -- and both are on screen already

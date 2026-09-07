@@ -75,6 +75,12 @@ export interface LevelEvent {
   spectral_centroid_hz?: number;
   direction_deg?: number;
   azimuth_deg?: number;
+  /** Bearing of every steered talker beam reporting speech right now. The
+   *  array steers two independently, so two entries at different bearings is
+   *  two people talking at once -- which `direction_deg` alone cannot express,
+   *  since it carries only the dominant beam. Absent when nothing was
+   *  measured; never an empty array, and never fabricated. */
+  beam_bearings_deg?: number[];
   /** Standing bearing of each speaker slot, index 0 = S1. Absent until the
    *  array has placed somebody; never an empty array. */
   speaker_slots_deg?: number[];

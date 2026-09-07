@@ -177,6 +177,10 @@ class DoAReader:
         self.period_s = period_s
         self.offset_deg = offset_deg
         self.latest: float | None = None
+        # Every steered talker beam currently carrying speech, not just the
+        # dominant one. Empty is the honest state and means the same as
+        # `latest is None`: nothing measured, so nothing claimed.
+        self.beams: list[float] = []
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.failures = 0
@@ -222,17 +226,31 @@ class DoAReader:
                 # speaker the voice lane has not decided on if it is actually
                 # there when that speaker starts. Falls back to the VAD gate,
                 # which is the more precise of the two when it does report.
-                bearing = self._array.read_beam_bearing()
+                # One snapshot serves both: the auto-select beam is the
+                # dominant bearing, the steered beams are the separate talkers.
+                # Reading them apart would double the poll traffic and could
+                # straddle a re-steer.
+                snapshot = self._array.read_beams()
+                bearing = None
+                talkers: list[float] = []
+                if snapshot is not None:
+                    if snapshot[3][1] > 0.0:
+                        bearing = snapshot[3][0]
+                    talkers = [snapshot[i][0]
+                               for i in type(self._array).TALKER_BEAMS
+                               if snapshot[i][1] > 0.0]
                 if bearing is None:
                     bearing = self._array.read_bearing()
                 # None means the board heard no speech for this read. Forward
                 # the absence; do NOT hold the previous bearing.
                 self.latest = (None if bearing is None
                                else (bearing + self.offset_deg) % 360.0)
+                self.beams = [(t + self.offset_deg) % 360.0 for t in talkers]
                 self.failures = 0
             except Exception:                                 # noqa: BLE001
                 self.failures += 1
                 self.latest = None
+                self.beams = []
                 if self.failures == 10:
                     print("[node] DoA reads failing — was the array unplugged?")
             self._stop.wait(self.period_s)
@@ -463,7 +481,7 @@ def _stream(conn: socket.socket, args, doa: DoAReader, ring: MotorRing,
 
             now = time.monotonic()
             if doa.latest is not None and now - sent_doa_at >= 0.1:
-                conn.sendall(na.pack_doa(seq, doa.latest))
+                conn.sendall(na.pack_doa(seq, doa.latest, beams=doa.beams))
                 sent_doa_at = now
             seq += 1
 

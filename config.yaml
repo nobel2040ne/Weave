@@ -701,6 +701,22 @@ live:
     direction_trust: 0.05
     # Deprecated alias, still read if `direction_trust` is absent.
     direction_prior_weight: 0.05
+    # HOW LONG A BEARING STAYS VALID AFTER THE ARRAY STOPS REPORTING ONE.
+    # The board publishes a bearing only while it hears speech, so direction
+    # arrives in bursts, not continuously. MEASURED 2026-09-07 off the live SSE
+    # with the array attached: direction was present on 48% of speech-marked
+    # events, and the dropouts ran a MEDIAN of 1.41s with a max of 3.97s -- so
+    # at the old hardcoded 1.5s, 3 of 9 gaps expired and `direction_deg` went
+    # absent mid-conversation. That is the "goes off and on" the booth sees.
+    # This is a FRESHNESS knob, not a smoothing one: every extra second is a
+    # second the ring can point at somebody who already stopped talking, and
+    # `autocwi/haptics.py` drives motors from it. The compass holds its last
+    # needle independently of this, so raise it for the DATA (attribution,
+    # haptics), never to make the display look calmer.
+    # 0 = NEVER EXPIRES: direction detection is always on, holding the last
+    # measured bearing until a new one replaces it (set 2026-09-07, at the
+    # user's request). A positive value expires it after that many seconds.
+    doa_ttl_s: 0
     # Colour an undecided word from its bearing instead of leaving it grey
     # (the SpeechCompass approach, CHI '25).
     direction_slot_colouring: true
