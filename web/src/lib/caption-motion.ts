@@ -19,6 +19,22 @@ export interface VoiceTypeRanges {
   scalePoints?: Array<[number, number]>;
   /** Reachable `font-weight`. 400 is fixed at the 2.3.8 neutral band. */
   weight: readonly [number, number];
+  /** 2.3.8's neutral band in Hz: every voice inside it is Regular 400. THIS
+     is what decides how far apart two speakers look — `weight` only bounds
+     the extremes, which real median F0s never reach. */
+  toneBand?: readonly [number, number];
+  /** 2.3.9's vocal span in Hz, the domain the band sits inside. */
+  toneSpan?: readonly [number, number];
+  /** How far the glyph's PROPORTION follows its weight, 0..1. A thin word
+     grows taller and narrower, a heavy one shorter and wider — 2.3.10's
+     diagonal extended to the vertical, which the PDF does not specify. */
+  proportionCoupling?: number;
+  /** How much of the WORD's own pitch enters the weight, 0..1, against the
+     speaker's running median. 0 is weight as pure speaker identity — one
+     talker is one weight however they modulate; 1 is 2.3.9 read literally
+     per word. Between the two the speaker's register is the anchor and the
+     word's pitch moves it. */
+  tonePitchTracking?: number;
   /** How much of the weight range an emphasised word takes, on top of 2.3.9. */
   weightEmphasis: number;
   /** Reachable `font-stretch` %. 100 is the neutral width. */
@@ -32,8 +48,16 @@ export interface CaptionType {
 }
 
 export interface CaptionMotionPlan {
-  /** The exact type before and after motion. */
+  /** The exact type before and after motion, and it is ALWAYS normal.
+     `docs/MOTION.md` § "Return to normal": every word begins and ends at
+     5% / Regular 400 / width 100. The PDF's static pages show voice type
+     persisting, the recordings show it returning, and the user chose
+     returning. Do not put the voice in here. */
   rest: CaptionType;
+  /** 2.3.9's register half alone — the voice with no emphasis in it. A CREST
+     target, not a rest state: it is what an unemphasised word rises to, so
+     the register renders on its way up instead of never rendering at all. */
+  registerWeight: number;
   /** CWI 2.3 type at the expressive crest of the motion. */
   voice: CaptionType;
   /** CWI 2.2.3's eye-guiding cue: ONE growth, anchored at the baseline. There
@@ -54,7 +78,8 @@ const SIZE_MIN_PCT = 3;
 const SIZE_MAX_PCT = 12;
 const SIZE_BASELINE_PCT = 5;
 
-/** CWI 2.3.8/2.3.9 pitch anchors. */
+/** CWI 2.3.8/2.3.9 pitch anchors — the fallback when the served runtime
+   config carries none. `config.yaml` owns the live values. */
 const PITCH_NEUTRAL_LOW_HZ = 160;
 const PITCH_NEUTRAL_HIGH_HZ = 200;
 const PITCH_FLOOR_HZ = 80;
@@ -63,17 +88,28 @@ const PITCH_CEILING_HZ = 250;
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.max(minimum, Math.min(maximum, value));
 
-/** Low/rich (+1) through neutral (0) to high/thin (-1). The complete 160–200
-   Hz range is neutral. */
-export function voiceTone(pitchHz: number): number {
+/** Low/rich (+1) through neutral (0) to high/thin (-1). The whole neutral
+   band maps to 0, so ordinary F0 jitter moves no weight at all. */
+export function voiceTone(
+  pitchHz: number,
+  band: readonly [number, number] = [PITCH_NEUTRAL_LOW_HZ, PITCH_NEUTRAL_HIGH_HZ],
+  span: readonly [number, number] = [PITCH_FLOOR_HZ, PITCH_CEILING_HZ],
+): number {
   if (!Number.isFinite(pitchHz) || pitchHz <= 0) return 0;
-  if (pitchHz < PITCH_NEUTRAL_LOW_HZ) {
-    return (PITCH_NEUTRAL_LOW_HZ - Math.max(pitchHz, PITCH_FLOOR_HZ)) /
-      (PITCH_NEUTRAL_LOW_HZ - PITCH_FLOOR_HZ);
+  // A malformed band must not divide by zero and paint every voice Regular.
+  const low = Math.min(band[0], band[1]);
+  const high = Math.max(band[0], band[1]);
+  const floor = Math.min(span[0], low);
+  const ceiling = Math.max(span[1], high);
+  if (pitchHz < low) {
+    const reach = low - floor;
+    return reach > 1e-6 ? (low - Math.max(pitchHz, floor)) / reach : 0;
   }
-  if (pitchHz <= PITCH_NEUTRAL_HIGH_HZ) return 0;
-  return -(Math.min(pitchHz, PITCH_CEILING_HZ) - PITCH_NEUTRAL_HIGH_HZ) /
-    (PITCH_CEILING_HZ - PITCH_NEUTRAL_HIGH_HZ);
+  if (pitchHz <= high) return 0;
+  const reach = ceiling - high;
+  return reach > 1e-6
+    ? -(Math.min(pitchHz, ceiling) - high) / reach
+    : 0;
 }
 
 /** Where the 2.3.5 baseline sits on the server's normalised 0..1 loudness. */
@@ -149,6 +185,55 @@ export function voiceWeight(
   return Math.round(clamp(400 + shaped + pressed, floor, ceiling));
 }
 
+/** Roboto Flex's vertical axes at their defaults. NotoSansKR carries none of
+   them and ignores the lot, exactly as it already ignores `wdth`. */
+const YTLC_DEFAULT = 514, YTLC_MIN = 416, YTLC_MAX = 570;
+const YTUC_DEFAULT = 712, YTUC_MIN = 528, YTUC_MAX = 760;
+const YTAS_DEFAULT = 750, YTAS_MIN = 649, YTAS_MAX = 854;
+
+export interface VoiceProportion {
+  /** Lowercase height. */
+  ytlc: number;
+  /** Uppercase height. */
+  ytuc: number;
+  /** Ascender height. */
+  ytas: number;
+}
+
+/** THE GLYPH'S PROPORTION, FOLLOWING ITS WEIGHT (2026-09-09, at the user's
+   request). Thin reads tall and narrow, heavy reads short and wide — the
+   vertical half of 2.3.10's diagonal, which the PDF pairs with width but
+   never states for height, so this is a deviation and it has a coupling of
+   its own to turn off.
+
+   Done on the typeface's OWN axes rather than a `scaleY`: Roboto Flex draws
+   real height changes, where a transform would smear the stems and would
+   also have to fight the hold-spring for the `transform` property. The axes
+   are asymmetric — there is far more room below the defaults than above — so
+   heavy words shorten more than thin words grow, which is how the face was
+   drawn and not something to correct. */
+export function voiceProportion(
+  weight: number,
+  ranges: VoiceTypeRanges,
+): VoiceProportion {
+  const [floor, ceiling] = ranges.weight;
+  const coupling = clamp(
+    Number.isFinite(ranges.proportionCoupling as number)
+      ? (ranges.proportionCoupling as number) : 0, 0, 1);
+  const side = weight >= 400
+    ? Math.max(1e-6, ceiling - 400)
+    : Math.max(1e-6, 400 - floor);
+  /* +1 is as thin as this voice gets, -1 as heavy. */
+  const lift = clamp(-(weight - 400) / side, -1, 1) * coupling;
+  const axis = (base: number, low: number, high: number) =>
+    Math.round(base + lift * (lift > 0 ? high - base : base - low));
+  return {
+    ytlc: axis(YTLC_DEFAULT, YTLC_MIN, YTLC_MAX),
+    ytuc: axis(YTUC_DEFAULT, YTUC_MIN, YTUC_MAX),
+    ytas: axis(YTAS_DEFAULT, YTAS_MIN, YTAS_MAX),
+  };
+}
+
 /** Harmonics -> width, constrained to §2.3.10's heavy+wide / light+condensed
    diagonal. */
 export function voiceWidth(
@@ -211,6 +296,32 @@ export function voiceDeviationOf(
   return clamp(Math.abs(scale - 1) / span, 0, 1);
 }
 
+/** The tone that drives WEIGHT: the speaker's register, moved by how this
+   word's own pitch departs from it.
+
+   2.3.9 is a property of the voice, and a running median is what makes one
+   talker read as one weight. But it is also what makes a talker who
+   deliberately drops or lifts their pitch render identically either way — on
+   a demo stage the presenter modulates and nothing moves. `tonePitchTracking`
+   is how much of the word's own pitch is allowed in. A word with no voiced
+   pitch keeps the speaker's register rather than drifting to Regular. */
+export function weightToneFor(
+  {pitchHz, registerHz}: {pitchHz: number; registerHz?: number},
+  ranges: VoiceTypeRanges,
+): number {
+  const hasRegister = typeof registerHz === "number" &&
+    Number.isFinite(registerHz) && registerHz > 0;
+  const registerTone = voiceTone(
+    hasRegister ? (registerHz as number) : pitchHz,
+    ranges.toneBand, ranges.toneSpan);
+  const tracking = clamp(
+    Number.isFinite(ranges.tonePitchTracking as number)
+      ? (ranges.tonePitchTracking as number) : 0, 0, 1);
+  if (!tracking || !Number.isFinite(pitchHz) || pitchHz <= 0) return registerTone;
+  const wordTone = voiceTone(pitchHz, ranges.toneBand, ranges.toneSpan);
+  return registerTone + (wordTone - registerTone) * tracking;
+}
+
 export function voiceTypeFor(
   {loudness, pitchHz, texture, registerHz}: {
     loudness: number;
@@ -220,18 +331,18 @@ export function voiceTypeFor(
   },
   ranges: VoiceTypeRanges,
 ): CaptionType {
-  /* THE REGISTER HALF IS A PROPERTY OF THE VOICE, NOT OF THE WORD
-     (2026-08-03). */
-  const register = typeof registerHz === "number" &&
-    Number.isFinite(registerHz) && registerHz > 0 ? registerHz : pitchHz;
-  const tone = voiceTone(register);
+  /* THE REGISTER IS THE ANCHOR (2026-08-03), AND THE WORD'S OWN PITCH MOVES
+     IT (2026-09-09) -- see `weightToneFor`. A shout cannot render thin either
+     way: `voiceWeight` withdraws the lightening as prominence rises. */
+  const tone = weightToneFor({pitchHz, registerHz}, ranges);
   const scale = voiceScale(loudness, ranges);
   return {
     scale,
     weight: voiceWeight(tone, ranges, prominenceOf(loudness)),
     // Width stays on the WORD's pitch: 2.3.10's diagonal is about the sound of
     // the utterance, and unlike weight it has no Light floor to fall into.
-    width: voiceWidth(voiceTone(pitchHz), texture, ranges),
+    width: voiceWidth(
+      voiceTone(pitchHz, ranges.toneBand, ranges.toneSpan), texture, ranges),
   };
 }
 
@@ -316,6 +427,15 @@ export function captionMotionFor(
   const target = voiceTypeFor(voice, ranges);
   const amount = clamp(Number.isFinite(expression) ? expression : 1, 0, 1);
   const voiceScale = 1 + (target.scale - 1) * amount;
+  /* THE VOICE'S OWN WEIGHT, WITH NO EMPHASIS IN IT. 2.3.9 makes weight a
+     property of the SPEAKER — low voices heavier — and the film's hand reading
+     says the same from the other side: weight is withheld per LINE, not spent
+     per word. It is a CREST target, never a rest state (see `rest` above).
+     What it buys is that `quietWord` used to send an unemphasised word to a
+     flat 400, so for most words the register never rendered at any point in
+     the motion; now such a word rises to its speaker's weight and returns. */
+  const registerWeight = Math.round(
+    400 + (voiceWeight(weightToneFor(voice, ranges), ranges, 0) - 400) * amount);
   /* THE POP IS PROPORTIONAL TO EMPHASIS, NOT A FIXED STEP.
      As a constant it was a binary decision on a continuous quantity: a word
      0.6% over the gate got exactly what the loudest word in the session got,
@@ -329,6 +449,7 @@ export function captionMotionFor(
   const lean = floor + (1 - floor) * emphasisOf(voiceScale, ranges);
   return {
     rest: {...NORMAL_CAPTION_TYPE},
+    registerWeight,
     voice: {
       scale: voiceScale,
       weight: Math.round(400 + (target.weight - 400) * amount),

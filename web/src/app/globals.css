@@ -750,11 +750,30 @@ button {
     1em * var(--crest-scale)
         * (1 + var(--voice-phase) * (var(--sync-pop, 1.15) - 1))
   );
+  /* RETURN TO NORMAL -- docs/MOTION.md. Every word begins and ends at
+     Regular 400; the voice is what the motion RISES to, never a resting
+     state. `--voice-weight` now carries the speaker's own weight even for an
+     unemphasised word, so the register renders on the way up instead of
+     being pinned to 400 and never rendering at all. */
   font-weight: calc(
     400 + var(--voice-phase) * (var(--voice-weight, 400) - 400)
         * (1 - var(--hold-gate, 0))
   );
   font-stretch: calc(100% + var(--voice-phase) * (var(--voice-width, 100%) - 100%));
+  /* THE VERTICAL HALF OF 2.3.10'S DIAGONAL: thin runs tall and narrow, heavy
+     short and wide. On the phase like every other voice channel, so the word
+     returns to the face's own defaults. Roboto Flex's own height axes rather
+     than a scaleY, so the stems stay drawn and nothing fights the hold-spring
+     for `transform`; NotoSansKR carries none of them and ignores it, exactly
+     as it already ignores `wdth`. `opsz` is restated because declaring
+     `font-variation-settings` here replaces the value inherited from
+     `.caption-word` outright. Only these axes are named, so `font-weight` and
+     `font-stretch` above still drive wght and wdth. */
+  font-variation-settings:
+    "opsz" 14,
+    "YTLC" calc(514 + var(--voice-phase) * (var(--voice-ytlc, 514) - 514)),
+    "YTUC" calc(712 + var(--voice-phase) * (var(--voice-ytuc, 712) - 712)),
+    "YTAS" calc(750 + var(--voice-phase) * (var(--voice-ytas, 750) - 750));
   line-height: 0;
 }
 
@@ -854,11 +873,30 @@ button {
   transform-origin: 50% calc(100% - var(--glyph-baseline-em, .38em));
   display: inline-block;
   font-size: calc(1em * var(--crest-scale));
+  /* RETURN TO NORMAL -- docs/MOTION.md. Every word begins and ends at
+     Regular 400; the voice is what the motion RISES to, never a resting
+     state. `--voice-weight` now carries the speaker's own weight even for an
+     unemphasised word, so the register renders on the way up instead of
+     being pinned to 400 and never rendering at all. */
   font-weight: calc(
     400 + var(--voice-phase) * (var(--voice-weight, 400) - 400)
         * (1 - var(--hold-gate, 0))
   );
   font-stretch: calc(100% + var(--voice-phase) * (var(--voice-width, 100%) - 100%));
+  /* THE VERTICAL HALF OF 2.3.10'S DIAGONAL: thin runs tall and narrow, heavy
+     short and wide. On the phase like every other voice channel, so the word
+     returns to the face's own defaults. Roboto Flex's own height axes rather
+     than a scaleY, so the stems stay drawn and nothing fights the hold-spring
+     for `transform`; NotoSansKR carries none of them and ignores it, exactly
+     as it already ignores `wdth`. `opsz` is restated because declaring
+     `font-variation-settings` here replaces the value inherited from
+     `.caption-word` outright. Only these axes are named, so `font-weight` and
+     `font-stretch` above still drive wght and wdth. */
+  font-variation-settings:
+    "opsz" 14,
+    "YTLC" calc(514 + var(--voice-phase) * (var(--voice-ytlc, 514) - 514)),
+    "YTUC" calc(712 + var(--voice-phase) * (var(--voice-ytuc, 712) - 712)),
+    "YTAS" calc(750 + var(--voice-phase) * (var(--voice-ytas, 750) - 750));
   will-change: font-size, font-weight, font-stretch, transform;
 }
 

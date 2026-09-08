@@ -338,10 +338,88 @@ motion:
         - [0.45, 0.222]
         - [0.65, 0.303]
         - [1.00, 0.425]
-      # 2.3.8: 160-200 Hz is Regular 400, a BAND rather than a pivot, so
-      # ordinary F0 jitter moves nothing. 2.3.9: low voices heavier.
-      weight_range: [340, 900]
+      # 2.3.8: a NEUTRAL BAND rather than a pivot, so ordinary F0 jitter moves
+      # nothing. 2.3.9: low voices heavier.
+      #
+      # THE FLOOR WAS 340 AND THAT WAS A FILM FIT, NOT THE SPEC (2026-09-08).
+      # 2.3.9's own figure rules the weight axis against the pitch axis over
+      # the same extent -- 80 Hz -> 1000, 250 Hz -> 100 -- so the PDF's light
+      # end is 100. 340 came from the PR film's worst lightening (-53 from
+      # Regular), and the film is one narrator who never goes light. Measured
+      # on the film's five voices, that floor left the light half 60 units of
+      # axis against the heavy half's 500, and the three speakers above 195 Hz
+      # rendered 375/400/400 -- a spread no reader can see.
+      # THE CEILING STAYS 900, WHICH IS *NOT* THE PDF'S 1000: Roboto Flex
+      # reaches wght 1000 but NotoSansKR stops at 900, and weight is the only
+      # 2.3 axis Korean has (its face carries no wdth), so a shared ceiling is
+      # what keeps one voice the same weight in both languages.
+      # THE FLOOR IS A LEGIBILITY CLAMP, AND IT IS ALSO THE STRONGEST LEVER ON
+      # HOW VISIBLE THE WHOLE CHANNEL IS. The light side is the compressed
+      # half -- 400 down to the floor against 400 up to 900 -- so lowering it
+      # is the one knob that improves everything at once, where
+      # `weight_pitch_tracking` trades speaker separation for modulation.
+      # Measured across the film (IQR of rendered weight / median step between
+      # neighbouring words / spread of speaker medians): 201/18/210 at 280,
+      # 216/20/236 at 240, 231/24/262 at 200.
+      # It stops at 240 because 100 is Thin and screenshotted on the stage the
+      # narrator's whole line came out hairline, which is not a caption for a
+      # Deaf/HoH viewer across a booth. Judge any change to it on a SCREENSHOT,
+      # not on the numbers above.
+      weight_range: [200, 900]
+      # 2.3.8's baseline band, which the PDF itself calls "approximate": inside
+      # it every voice is Regular 400. Widening it flattens more speakers onto
+      # one weight; narrowing it spreads them. The PDF's own prose says
+      # 160-200, its figure ramps straight through and puts 400 nearer 193.
+      # 175-190 keeps a real dead zone -- a voice sitting in it is Regular, and
+      # F0 jitter there moves nothing -- while letting ordinary voices separate.
+      # THIS IS THE DIAL for how far apart two speakers look; `weight_range`
+      # only sets how far the extremes reach, and real median F0s never get
+      # near them.
+      #
+      # NARROWING IT CUTS THE OPPOSITE WAY FROM `weight_pitch_tracking`, which
+      # is not obvious: it raises the spread of speaker medians but slightly
+      # SHRINKS one speaker's own word-to-word swing, because the ramps run
+      # from the band edge out to 80/250 Hz, so a narrower band makes each
+      # ramp longer and therefore shallower -- it buys separation by deleting
+      # the dead zone, not by steepening. Measured across the film's seven
+      # voices, who-is-talking / one-speaker-modulating: 161/80 at 160-200,
+      # 192/80 at 170-195, 210/72 here, 223/70 at 178-188, 240/66 at 182-184.
+      # The curve flattens after this and the dead zone stops being one.
+      weight_neutral_band_hz: [175, 190]
+      # 2.3.9's stated vocal span, the domain the band sits inside.
+      weight_span_hz: [80, 250]
+      # HOW MUCH OF THE WORD'S OWN PITCH ENTERS THE WEIGHT, against the
+      # speaker's running median F0 (2026-09-09). 0 is weight as pure speaker
+      # identity -- one talker is one weight however they modulate, which is
+      # what shipped and what made a presenter demonstrating low/high with
+      # their own voice change nothing on the stage. 1 reads 2.3.9 literally
+      # per word. In between, the register anchors and the word's pitch moves
+      # it. MEASURED on the PR film's main narrator (register 133 Hz, per-word
+      # pitch 78-413 Hz), the weights one speaker renders span 215 at 0.0, 416
+      # at 0.55 and 620 at 1.0 -- so this is the knob for how live the stage
+      # looks. A shout still cannot render thin either way: `voiceWeight`
+      # withdraws the high-pitch lightening as loudness rises.
+      #
+      # IT TRADES *WHO IS TALKING* FOR *HOW THEY ARE TALKING*, and 0.55 is the
+      # knee. Measured across the film's seven voices -- within-speaker IQR
+      # (the presenter modulating) against the spread of speaker medians (who
+      # is talking): 37/263 at 0.0, 68/226 at 0.40, 80/192 at 0.55, 90/158 at
+      # 0.70, 116/134 at 1.0. Up to ~0.55 the response roughly doubles for
+      # about a quarter of the speaker separation; past it the speakers start
+      # collapsing onto each other and the colour is left carrying 2.1 alone.
+      weight_pitch_tracking: 0.70
       weight_emphasis: 0.92    # what an emphasised word adds on top
+      # THE GLYPH'S PROPORTION FOLLOWS ITS WEIGHT (2026-09-09, at the user's
+      # request): thin runs tall and narrow, heavy short and wide. 2.3.10 pairs
+      # weight with WIDTH and says nothing about height, so the vertical half
+      # is a deviation and this is its off switch. Driven on Roboto Flex's own
+      # YTLC/YTUC/YTAS axes rather than a scaleY, so the stems stay drawn;
+      # NotoSansKR carries none of them and ignores it, exactly as it already
+      # ignores `wdth`. The axes have far more room below their defaults than
+      # above, so heavy words shorten more than thin words grow -- that is how
+      # the face was drawn. Re-run `scripts/ink_collision.py` after changing
+      # it: this is the one type channel that moves ink vertically.
+      weight_proportion_coupling: 0.75
       # 2.3.9/2.3.10: rich low harmonics read wider, thin high harmonics
       # condensed.
       width_range: [82, 124]

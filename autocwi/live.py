@@ -23,6 +23,7 @@ for comparison and keeps its adaptive threshold/VAD filtering.
 
 from __future__ import annotations
 
+import gc
 import http.server
 import difflib
 import json
@@ -2295,6 +2296,48 @@ class SpeakerTracker:
         self._speaker_switches = 0
         self._corrections = 0
         self._unknown_assignments = 0
+
+    def reset_session(self) -> None:
+        """Forget every enrolled voice, keeping the loaded models.
+
+        A booth reload is new people in front of the microphone, and an
+        enrolled centroid is a CLAIM ABOUT WHO IS SPEAKING (CWI 2.1) — carried
+        across, it paints the next visitor in the last one's colours. The
+        models are expensive and hold nothing learned from audio, so they stay;
+        everything derived from audio goes. `direction_speakers` and
+        `speaker_bearings` go with it: a learned bearing band belongs to a
+        person who has left the booth.
+        """
+
+        self.centroids = []
+        self.counts = []
+        self.enrolled_durations = []
+        self.profile_observation_groups = []
+        self.profile_longest_observation = []
+        self.profile_stable = []
+        self.profile_directions = []
+        self.alias = {}
+
+        self.last_confidently_active_speaker = None
+        self.last_speaker_change_timestamp = None
+        self.current_confidence = 0.0
+        self.assignment_status = "unknown"
+        self.revision_id = 0
+        self.revision_history = {}
+        self.recent_direction_estimate = None
+
+        self._pending_switch = None
+        self._pending_switch_since = None
+        self._queued_revisions = []
+        self._pending_candidate_word_keys = {}
+        self._observation_sequence = 0
+        self._observation_group_sequence = 0
+        self._speaker_switches = 0
+        self._corrections = 0
+        self._unknown_assignments = 0
+
+        self.direction_speakers = None
+        self.speaker_bearings = None
 
     def _canon(self, index: int) -> int:
         while index in self.alias:
@@ -5948,12 +5991,21 @@ def apply_verifier_backend(verifier: EndpointVerifier, cfg: dict):
 # ---------------------------------------------------------------------------
 
 class LiveLanguageSession:
-    """Thread-safe language choice shared by the startup thread and local UI."""
+    """Thread-safe language choice shared by the startup thread and local UI.
+
+    A ``restartable`` session remakes the choice on every browser page load:
+    at the booth CMD+R is the reset gesture between visitors, and walking back
+    to the terminal is not. A run whose language came from ``--lang`` — every
+    probe is one — is NOT restartable, so a reload there resumes the capture
+    already running instead of stopping it.
+    """
 
     def __init__(
         self,
         languages: list[dict],
         language: str | None = None,
+        *,
+        restartable: bool = False,
     ):
         self.languages = tuple(dict(item) for item in languages)
         self._supported = {str(item["id"]) for item in self.languages}
@@ -5963,16 +6015,70 @@ class LiveLanguageSession:
         self._stage = "loading" if language else "selecting"
         self._lock = threading.Lock()
         self._selected = threading.Event()
+        self.restartable = bool(restartable)
+        # Called (outside the lock) when a page load returns the session to the
+        # picker, so the server can clear the retained transcript. `run_live`
+        # points it at the broadcaster.
+        self.on_reset: Callable[[], None] | None = None
+        self._generation = 0
+        self._restart = threading.Event()
         if language:
             self._selected.set()
 
+    def _snapshot_locked(self) -> dict:
+        return {
+            "state": self._stage,
+            "language": self._language,
+            "languages": [dict(item) for item in self.languages],
+        }
+
     def snapshot(self) -> dict:
         with self._lock:
-            return {
-                "state": self._stage,
-                "language": self._language,
-                "languages": [dict(item) for item in self.languages],
-            }
+            return self._snapshot_locked()
+
+    def begin_page_load(self) -> dict:
+        """A browser opened the studio. Return the snapshot it should render.
+
+        THIS REQUEST IS THE RELOAD SIGNAL. The studio fetches ``/session``
+        exactly once per page load and a reconnecting EventSource never touches
+        it, so a GET arriving past the picker means the operator pressed CMD+R.
+        On a restartable session that returns the choice to `selecting` and
+        asks the running capture to stop; otherwise it is an ordinary read.
+        """
+
+        with self._lock:
+            if not self.restartable or self._stage == "selecting":
+                return self._snapshot_locked()
+            self._language = None
+            self._stage = "selecting"
+            self._generation += 1
+            self._selected.clear()
+            self._restart.set()
+            snapshot = self._snapshot_locked()
+        # Outside the lock: the callback takes the broadcaster's.
+        if self.on_reset is not None:
+            self.on_reset()
+        return snapshot
+
+    def restart_pending(self) -> bool:
+        """Has a page load asked the current capture to stop?"""
+
+        return self._restart.is_set()
+
+    def begin_capture(self) -> tuple[str, int]:
+        """Block until a language is chosen, then claim it for one capture.
+
+        Re-checks under the lock because a reload can land between the wait
+        returning and the claim, which clears the language again.
+        """
+
+        while True:
+            self._selected.wait()
+            with self._lock:
+                if self._language is None:
+                    continue
+                self._restart.clear()
+                return self._language, self._generation
 
     def select_language(self, language: str) -> dict:
         with self._lock:
@@ -6077,6 +6183,22 @@ class Broadcaster:
     def unregister(self, q: queue.Queue) -> None:
         with self._lock:
             self._clients.discard(q)
+
+    def reset(self) -> None:
+        """Drop the retained transcript so the next session starts blank.
+
+        A booth reload is a NEW session: the previous visitor's captions must
+        not replay onto the stage behind the language picker. Event ids keep
+        climbing across the reset, so a reconnecting EventSource can never be
+        handed an id it has already acknowledged.
+        """
+
+        with self._lock:
+            self._history.clear()
+            self._latest_hypothesis = None
+            # The next connection is a new audience, so its startup backlog
+            # keeps first-paint motion exactly as the first one's did.
+            self._has_presented_to_client = False
 
     def publish(self, obj: dict) -> None:
         with self._lock:
@@ -6213,7 +6335,10 @@ def make_handler(
                     runtime_body(), "application/json; charset=utf-8"
                 )
             elif path == "/session" and language_session is not None:
-                self._send_json(language_session.snapshot())
+                # NOT `snapshot()`: this GET is the one honest signal that the
+                # browser was reloaded, and on a restartable session that
+                # returns the studio to the language picker.
+                self._send_json(language_session.begin_page_load())
             elif path == "/RobotoFlex.ttf" and font_path is not None:
                 self._send_file(
                     font_path,
@@ -6659,6 +6784,22 @@ def _studio_runtime_config(
             float(v) for v in live_sync.get("weight_range", [340, 760])
         ],
         "weightEmphasis": float(live_sync.get("weight_emphasis", 0.55)),
+        # 2.3.8's neutral band and 2.3.9's vocal span. Served rather than
+        # hardcoded in the renderer: how far apart two speakers LOOK is set
+        # here, not by `weightRange`, which only bounds the extremes.
+        "weightNeutralBandHz": [
+            float(v) for v in live_sync.get(
+                "weight_neutral_band_hz", [160, 200])
+        ],
+        "weightSpanHz": [
+            float(v) for v in live_sync.get("weight_span_hz", [80, 250])
+        ],
+        "weightPitchTracking": float(
+            live_sync.get("weight_pitch_tracking", 0.0)
+        ),
+        "weightProportionCoupling": float(
+            live_sync.get("weight_proportion_coupling", 0.0)
+        ),
         "deliveryMinConfidence": live_sync.get(
             "delivery_min_confidence", 0.38
         ),
@@ -6802,7 +6943,11 @@ def run_live(args, cfg: dict, device: str) -> None:
         None if selection_required
         else (requested_lang or live_cfg.get("lang", "en"))
     )
-    language_session = LiveLanguageSession(language_options, initial_lang)
+    # Restartable exactly where the PICKER chose the language: a `--lang`
+    # run — every probe is one — reloads back into its running capture.
+    language_session = LiveLanguageSession(
+        language_options, initial_lang, restartable=selection_required,
+    )
     runtime_config.update({
         "languages": language_options,
         "selectedLanguage": initial_lang,
@@ -6848,213 +6993,285 @@ def run_live(args, cfg: dict, device: str) -> None:
             language_session=language_session,
             host=getattr(args, "host", "127.0.0.1"),
         )
+
+        def _on_reload() -> None:
+            """A page load returned the studio to the picker."""
+
+            broadcaster.reset()
+            broadcaster.publish({"type": "boot", "stage": "choose language"})
+            print("[live] browser reloaded — choose a language again")
+
+        language_session.on_reset = _on_reload
         if selection_required:
             broadcaster.publish({"type": "boot", "stage": "choose language"})
             print("[live] choose English or 한국어 in the browser")
-            try:
-                lang = language_session.wait_for_language()
-            except KeyboardInterrupt:
-                stop.set()
+
+    # CMD+R IS THE BOOTH'S RESET GESTURE, not a trip back to the terminal, so
+    # everything below is ONE SESSION of a loop. A reload returns the studio to
+    # the picker (`begin_page_load`), stops this pass at its next event, and the
+    # next pass starts on a blank stage under the newly chosen language.
+    #
+    # The loaded stack outlives one session, so re-picking the SAME language
+    # reaches captions in under a second where a different one pays the ~8 s
+    # load. That reuse is NOT the forbidden hot-swap: the recognizer never
+    # changes and its streams are created per utterance either way. What the
+    # old session LEARNED does go — `reset_session` drops the enrolled voices,
+    # because an enrolled centroid is a claim about who is speaking and the
+    # person it describes has left the booth.
+    base_cfg = cfg
+    loaded_lang: str | None = None
+    stack: tuple | None = None
+
+    def announce(stage: str, language: str | None = None) -> None:
+        """Publish a boot stage UNLESS a reload has already superseded it.
+
+        A reload can land while the models are loading, and this pass will not
+        notice until it reaches its first event. Publishing `listening` after
+        that point DISMISSES the picker the reload just put up, and nothing
+        would raise it again until the operator reloaded a second time.
+        """
+
+        if broadcaster is None or language_session.restart_pending():
+            return
+        broadcaster.publish({"type": "boot", "stage": stage,
+                             "language": language})
+
+    while True:
+        try:
+            lang, _generation = language_session.begin_capture()
+        except KeyboardInterrupt:
+            stop.set()
+            if server is not None:
                 server.shutdown()
-                print("\n[live] stopped before capture")
-                return
-        else:
-            lang = initial_lang
-        language_session.set_stage("loading")
-        broadcaster.publish({
-            "type": "boot",
-            "stage": "loading models",
-            "language": lang,
-        })
-    else:
-        lang = initial_lang
+            print("\n[live] stopped before capture")
+            return
+        if broadcaster is not None:
+            language_session.set_stage("loading")
+        announce("loading models", lang)
 
-    assert lang is not None
-    cfg = _configure_live_language(cfg, lang)
-    live_cfg = cfg["live"]
-    # The profile may override `display:` keys, and the runtime config handed
-    # to the studio was built before the language was known. Update it IN
-    # PLACE: the server closed over this dict, and `/runtime-config.json` is
-    # serialized per request precisely so this lands.
-    if runtime_config is not None:
-        runtime_config.clear()
-        runtime_config.update(_studio_runtime_config(cfg))
-    diarizer_override = getattr(args, "diarizer", None)
-    if diarizer_override is not None:
-        cfg = {
-            **cfg,
-            "live": {
-                **live_cfg,
-                "diarization": {
-                    **(live_cfg.get("diarization", {}) or {}),
-                    "backend": diarizer_override,
-                    "enabled": diarizer_override != "off",
-                },
-            },
-        }
+        cfg = _configure_live_language(base_cfg, lang)
         live_cfg = cfg["live"]
+        # The profile may override `display:` keys, and the runtime config handed
+        # to the studio was built before the language was known. Update it IN
+        # PLACE: the server closed over this dict, and `/runtime-config.json` is
+        # serialized per request precisely so this lands.
+        if runtime_config is not None:
+            runtime_config.clear()
+            runtime_config.update(_studio_runtime_config(
+                cfg,
+                selected_language=lang,
+                language_selection_required=selection_required,
+            ))
+        diarizer_override = getattr(args, "diarizer", None)
+        if diarizer_override is not None:
+            cfg = {
+                **cfg,
+                "live": {
+                    **live_cfg,
+                    "diarization": {
+                        **(live_cfg.get("diarization", {}) or {}),
+                        "backend": diarizer_override,
+                        "enabled": diarizer_override != "off",
+                    },
+                },
+            }
+            live_cfg = cfg["live"]
 
-    # Resolve the bundled clip only after language selection. Previously the
-    # picker could select Korean while `--sample` had already bound the English
-    # video, making a healthy Korean model look catastrophically inaccurate.
-    source_file = getattr(args, "file", None)
-    start_s = getattr(args, "start", None)
-    if getattr(args, "sample", False) and not source_file:
-        source_file = sample_clip_path(lang)
+        # Resolve the bundled clip only after language selection. Previously the
+        # picker could select Korean while `--sample` had already bound the English
+        # video, making a healthy Korean model look catastrophically inaccurate.
+        source_file = getattr(args, "file", None)
+        start_s = getattr(args, "start", None)
+        if getattr(args, "sample", False) and not source_file:
+            source_file = sample_clip_path(lang)
+            if start_s is None:
+                # The PR film changes treatment at 28 s -- before it is the titles
+                # demo on black, after it is CWI applied to real footage, which is
+                # what this product does. Start there. The Korean clip is 13 s of
+                # FLEURS narration and has no such split, so it is never skipped.
+                start_s = 28.0 if lang != "ko" else 0.0
+            print(
+                f"[live] streaming bundled {lang} sample: "
+                f"{Path(source_file).name}"
+                + (f" from {start_s:g}s" if start_s else "")
+            )
         if start_s is None:
-            # The PR film changes treatment at 28 s -- before it is the titles
-            # demo on black, after it is CWI applied to real footage, which is
-            # what this product does. Start there. The Korean clip is 13 s of
-            # FLEURS narration and has no such split, so it is never skipped.
-            start_s = 28.0 if lang != "ko" else 0.0
-        print(
-            f"[live] streaming bundled {lang} sample: "
-            f"{Path(source_file).name}"
-            + (f" from {start_s:g}s" if start_s else "")
+            start_s = 0.0
+        # --once processes to EOF and exits; a loop would never reach EOF.
+        loop = getattr(args, "loop", False) and not getattr(args, "once", False)
+        if loop and source_file:
+            print("[live] looping clip — Ctrl-C to quit")
+        if source_file:
+            blocks = file_blocks(source_file, realtime=realtime, loop=loop,
+                                 start_s=float(start_s))
+        elif node_link is not None:
+            blocks = net_blocks(stop, node_link)
+        else:
+            blocks = mic_blocks(stop, device=mic_device)
+
+        tracker = detector = None
+        if whisper_model:
+            from faster_whisper import WhisperModel
+
+            ct2_device = "cuda" if device == "cuda" else "cpu"
+            model = WhisperModel(whisper_model, device=ct2_device,
+                                 compute_type="float16" if ct2_device == "cuda" else "int8")
+            print(f"[live] legacy whisper-{whisper_model} ready (lang={lang})")
+            if broadcaster is not None and not language_session.restart_pending():
+                language_session.set_stage("listening")
+            announce("listening", lang)
+            events = word_events(utterances(blocks, live_cfg), model, lang, cfg)
+        else:
+            if stack is None or loaded_lang != lang:
+                if stack is not None:
+                    # Drop the old weights BEFORE loading the new ones. Two
+                    # 600 MB stacks do not need to be resident at once, and the
+                    # booth machine is the same laptop driving the projector.
+                    stack = None
+                    loaded_lang = None
+                    gc.collect()
+                t_load = time.perf_counter()
+                stack = _load_live_stack(cfg)
+                loaded_lang = lang
+                model_label = live_cfg.get("model_label", "streaming transducer")
+                print(f"[live] local ASR ready in {time.perf_counter() - t_load:.1f}s: "
+                      + model_label
+                      + (" + 160ms draft readahead" if stack[1] is not None else "")
+                      + (" + endpoint verifier" if stack[2] is not None else "")
+                      + f" (lang={lang}, CPU)"
+                      + (" + speaker attribution" if stack[3] else "")
+                      + (" + non-speech sound lane" if stack[4] else "")
+                      + (" + phoneme onset hints" if stack[5] else ""))
+            else:
+                print(f"[live] reusing the warm {lang} stack — new session")
+            model, draft_model, verifier, tracker, detector, onset = stack
+            if broadcaster is not None and not language_session.restart_pending():
+                language_session.set_stage("listening")
+            announce("listening", lang)
+            # The level meter reports the array's bearing when one is attached.
+            # Built here rather than inside `streaming_events` so the node's
+            # direction can reach it without threading the link through the
+            # recognizer's signature.
+            input_gain = InputGain(cfg)
+            if node_link is not None:
+                input_gain.direction_source = lambda: node_link.direction_deg
+                # Every live talker beam, not just the dominant one, so the compass
+                # can draw a second simultaneous speaker instead of collapsing the
+                # room onto one needle.
+                input_gain.beam_bearings_source = lambda: node_link.beam_bearings_deg
+                # Same injection shape for attribution: the tracker's direction
+                # prior was plumbed end to end but never fed, so `direction_deg`
+                # only ever reached the compass. With an array attached, WHO spoke
+                # now has spatial evidence beside the voice evidence.
+                if tracker is not None:
+                    tracker.direction_for_span = node_link.bearing_for_span
+                    # The ring's "who is where" marks. NOT gated on
+                    # `direction_slot_colouring`: that switch decides whether
+                    # geometry may colour an undecided WORD, which is a claim about
+                    # identity. This only describes where decisions the voice lane
+                    # already made were heard from, so turning the colouring off
+                    # must not blind the compass.
+                    tracker.speaker_bearings = SpeakerBearingMap()
+                    input_gain.speaker_bearings_source = (
+                        lambda: tracker.speaker_bearings.marks)
+                    # One map shared by both captioners and the level meter, so the
+                    # compass marks the same slots the captions are coloured from.
+                    speaker_cfg = (cfg.get("live", {}) or {}).get(
+                        "speaker_attribution", {}) or {}
+                    if speaker_cfg.get("direction_slot_colouring", True):
+                        tracker.direction_speakers = DirectionSpeakerMap(
+                            tolerance_deg=float(speaker_cfg.get(
+                                "direction_slot_tolerance_deg", 35.0)))
+                        input_gain.speaker_slots_source = (
+                            lambda: tracker.direction_speakers.slots)
+            events = streaming_events(
+                blocks, model, cfg, draft_model, verifier=verifier,
+                gain=input_gain,
+                speaker_tracker=tracker, sound_detector=detector,
+                onset_detector=onset,
+            )
+        events_path = out / "live_events.jsonl"
+
+        if getattr(args, "once", False):  # headless: process source to EOF, no server
+            with open(events_path, "w", encoding="utf-8") as f:
+                n = 0
+                for ev in events:
+                    if _is_durable_record(ev):
+                        f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+                        n += 1
+            print(f"[live] {n} durable events -> {events_path}")
+            return
+
+        if server is None:  # defensive: non-headless paths normally start above
+            server, broadcaster = _start_server(
+                page,
+                port,
+                not getattr(args, "no_open", False),
+                static_root=static_root,
+                legacy_page=legacy_route,
+                font_path=font_path,
+                korean_font_path=korean_font_path,
+                runtime_config=runtime_config,
+                language_session=language_session,
+            )
+
+        # Haptics actuate on the durable record and nothing else. `cue_for_word`
+        # returns None for the overwhelming majority of words, which is the rule:
+        # continuous vibration measured as distracting, so the motors fire on
+        # speaker changes and emphasis only.
+        haptic_intensity = float(
+            (cfg.get("haptics", {}) or {}).get("intensity", 0.8)
         )
-    if start_s is None:
-        start_s = 0.0
-    # --once processes to EOF and exits; a loop would never reach EOF.
-    loop = getattr(args, "loop", False) and not getattr(args, "once", False)
-    if loop and source_file:
-        print("[live] looping clip — Ctrl-C to quit")
-    if source_file:
-        blocks = file_blocks(source_file, realtime=realtime, loop=loop,
-                             start_s=float(start_s))
-    elif node_link is not None:
-        blocks = net_blocks(stop, node_link)
-    else:
-        blocks = mic_blocks(stop, device=mic_device)
+        cue_seq = 0
 
-    if whisper_model:
-        from faster_whisper import WhisperModel
+        try:
+            with open(events_path, "w", encoding="utf-8") as f:
+                for ev in events:
+                    # Checked per event rather than per word: level events keep
+                    # arriving ~8x a second through silence, so a reload is
+                    # honoured within one event period even in a quiet room.
+                    if language_session.restart_pending():
+                        break
+                    broadcaster.publish(ev)
+                    if _is_durable_record(ev):
+                        f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+                        f.flush()
+                        if node_link is not None and ev.get("type") == "word":
+                            cue = haptics.cue_for_word(ev, haptic_intensity)
+                            if cue is not None:
+                                cue_seq += 1
+                                node_link.send_cue(cue.flag, cue.direction_deg,
+                                                   cue.intensity, cue_seq)
+                else:
+                    print("[live] audio source finished — server still running "
+                          "(Ctrl-C to quit)")
+                    # A finished clip still holds the session: the stage keeps
+                    # what it captured until the operator reloads. On a run that
+                    # cannot restart (`--lang`, every probe) this never returns,
+                    # which is the old behaviour exactly.
+                    while not language_session.restart_pending():
+                        time.sleep(0.2)
+        except KeyboardInterrupt:
+            stop.set()
+            server.shutdown()
+            print("\n[live] stopped")
+            return
+        finally:
+            # Close the source explicitly. `events` wraps `blocks`, and only
+            # closing the outer generator leaves the microphone stream open
+            # until the collector happens to reach it.
+            events.close()
+            blocks.close()
 
-        ct2_device = "cuda" if device == "cuda" else "cpu"
-        model = WhisperModel(whisper_model, device=ct2_device,
-                             compute_type="float16" if ct2_device == "cuda" else "int8")
-        print(f"[live] legacy whisper-{whisper_model} ready (lang={lang})")
+        # A reload asked for a new session. Everything the last one learned from
+        # audio goes; the weights stay warm for the next pass.
+        if tracker is not None:
+            tracker.reset_session()
+        if detector is not None:
+            # Its rolling buffer is the previous visitor's room.
+            detector.reset()
+        # Re-announce the picker. A client that connected between the reload and
+        # this point saw whatever stage this pass was publishing, and `boot` is
+        # not retained, so there is nothing to replay it back to `selecting`.
         if broadcaster is not None:
-            language_session.set_stage("listening")
-            broadcaster.publish({
-                "type": "boot",
-                "stage": "listening",
-                "language": lang,
-            })
-        events = word_events(utterances(blocks, live_cfg), model, lang, cfg)
-    else:
-        t_load = time.perf_counter()
-        model, draft_model, verifier, tracker, detector, onset = _load_live_stack(cfg)
-        model_label = live_cfg.get("model_label", "streaming transducer")
-        print(f"[live] local ASR ready in {time.perf_counter() - t_load:.1f}s: "
-              + model_label
-              + (" + 160ms draft readahead" if draft_model is not None else "")
-              + (" + endpoint verifier" if verifier is not None else "")
-              + f" (lang={lang}, CPU)"
-              + (" + speaker attribution" if tracker else "")
-              + (" + non-speech sound lane" if detector else "")
-              + (" + phoneme onset hints" if onset else ""))
-        if broadcaster is not None:
-            language_session.set_stage("listening")
-            broadcaster.publish({
-                "type": "boot",
-                "stage": "listening",
-                "language": lang,
-            })
-        # The level meter reports the array's bearing when one is attached.
-        # Built here rather than inside `streaming_events` so the node's
-        # direction can reach it without threading the link through the
-        # recognizer's signature.
-        input_gain = InputGain(cfg)
-        if node_link is not None:
-            input_gain.direction_source = lambda: node_link.direction_deg
-            # Every live talker beam, not just the dominant one, so the compass
-            # can draw a second simultaneous speaker instead of collapsing the
-            # room onto one needle.
-            input_gain.beam_bearings_source = lambda: node_link.beam_bearings_deg
-            # Same injection shape for attribution: the tracker's direction
-            # prior was plumbed end to end but never fed, so `direction_deg`
-            # only ever reached the compass. With an array attached, WHO spoke
-            # now has spatial evidence beside the voice evidence.
-            if tracker is not None:
-                tracker.direction_for_span = node_link.bearing_for_span
-                # The ring's "who is where" marks. NOT gated on
-                # `direction_slot_colouring`: that switch decides whether
-                # geometry may colour an undecided WORD, which is a claim about
-                # identity. This only describes where decisions the voice lane
-                # already made were heard from, so turning the colouring off
-                # must not blind the compass.
-                tracker.speaker_bearings = SpeakerBearingMap()
-                input_gain.speaker_bearings_source = (
-                    lambda: tracker.speaker_bearings.marks)
-                # One map shared by both captioners and the level meter, so the
-                # compass marks the same slots the captions are coloured from.
-                speaker_cfg = (cfg.get("live", {}) or {}).get(
-                    "speaker_attribution", {}) or {}
-                if speaker_cfg.get("direction_slot_colouring", True):
-                    tracker.direction_speakers = DirectionSpeakerMap(
-                        tolerance_deg=float(speaker_cfg.get(
-                            "direction_slot_tolerance_deg", 35.0)))
-                    input_gain.speaker_slots_source = (
-                        lambda: tracker.direction_speakers.slots)
-        events = streaming_events(
-            blocks, model, cfg, draft_model, verifier=verifier,
-            gain=input_gain,
-            speaker_tracker=tracker, sound_detector=detector,
-            onset_detector=onset,
-        )
-    events_path = out / "live_events.jsonl"
-
-    if getattr(args, "once", False):  # headless: process source to EOF, no server
-        with open(events_path, "w", encoding="utf-8") as f:
-            n = 0
-            for ev in events:
-                if _is_durable_record(ev):
-                    f.write(json.dumps(ev, ensure_ascii=False) + "\n")
-                    n += 1
-        print(f"[live] {n} durable events -> {events_path}")
-        return
-
-    if server is None:  # defensive: non-headless paths normally start above
-        server, broadcaster = _start_server(
-            page,
-            port,
-            not getattr(args, "no_open", False),
-            static_root=static_root,
-            legacy_page=legacy_route,
-            font_path=font_path,
-            korean_font_path=korean_font_path,
-            runtime_config=runtime_config,
-            language_session=language_session,
-        )
-
-    # Haptics actuate on the durable record and nothing else. `cue_for_word`
-    # returns None for the overwhelming majority of words, which is the rule:
-    # continuous vibration measured as distracting, so the motors fire on
-    # speaker changes and emphasis only.
-    haptic_intensity = float(
-        (cfg.get("haptics", {}) or {}).get("intensity", 0.8)
-    )
-    cue_seq = 0
-
-    try:
-        with open(events_path, "w", encoding="utf-8") as f:
-            for ev in events:
-                broadcaster.publish(ev)
-                if _is_durable_record(ev):
-                    f.write(json.dumps(ev, ensure_ascii=False) + "\n")
-                    f.flush()
-                    if node_link is not None and ev.get("type") == "word":
-                        cue = haptics.cue_for_word(ev, haptic_intensity)
-                        if cue is not None:
-                            cue_seq += 1
-                            node_link.send_cue(cue.flag, cue.direction_deg,
-                                               cue.intensity, cue_seq)
-        print("[live] audio source finished — server still running (Ctrl-C to quit)")
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        stop.set()
-        server.shutdown()
-        print("\n[live] stopped")
+            broadcaster.publish({"type": "boot", "stage": "choose language"})

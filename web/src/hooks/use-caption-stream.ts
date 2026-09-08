@@ -147,6 +147,17 @@ export interface RuntimeConfig {
   deliveryFlowDurationMs: number;
   /** Settled wght band. CWI 2.3.9: low pitch heavy, high pitch light. */
   weightRange: [number, number];
+  /** CWI 2.3.8's neutral band in Hz — every voice inside it is Regular 400,
+     so this, not `weightRange`, is what sets how far apart speakers look. */
+  weightNeutralBandHz: [number, number];
+  /** CWI 2.3.9's vocal span in Hz. */
+  weightSpanHz: [number, number];
+  /** How much of a word's OWN pitch enters its weight, against the speaker's
+     running median. 0 makes one talker one weight however they modulate. */
+  weightPitchTracking: number;
+  /** How far a glyph's PROPORTION follows its weight: thin tall and narrow,
+     heavy short and wide. 2.3.10's diagonal extended to the vertical. */
+  weightProportionCoupling: number;
   /** Settled wdth band. CWI 2.3.9/2.3.10: rich harmonics wider. */
   widthRange: [number, number];
   /** Transient voice-size band around the baseline. CWI 2.3.6. */
@@ -219,6 +230,10 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   deliveryMotionEnabled: true,
   deliveryFlowDurationMs: 90,
   weightRange: [340, 760],
+  weightNeutralBandHz: [160, 200],
+  weightSpanHz: [80, 250],
+  weightPitchTracking: 0,
+  weightProportionCoupling: 0,
   widthRange: [82, 124],
   voiceScaleRange: [0.90, 1.20],
   voiceScaleResponse: 0.25,
@@ -437,6 +452,38 @@ export function useCaptionStream({reducedMotion}: StreamOptions) {
     if (flushFrameRef.current) cancelAnimationFrame(flushFrameRef.current);
   }, []);
 
+  /* A RELOAD IS A NEW SESSION, AND A NEW SESSION STARTS BLANK. The server
+     drops its retained transcript on the same request, so ordinarily nothing
+     stale reaches this tab at all -- this covers the tab that was ALREADY
+     open when another one reloaded, which learns about the reset over SSE
+     with the previous visitor's words still in its model. Every per-word
+     memory goes with them: a stale schedule or freeze entry keyed by a word
+     id the next session will reuse would pin the new word to the old one's
+     turn moment and colour. */
+  const resetStage = useCallback(() => {
+    pendingRef.current = [];
+    if (flushFrameRef.current) {
+      cancelAnimationFrame(flushFrameRef.current);
+      flushFrameRef.current = 0;
+    }
+    scheduledRef.current.clear();
+    settledTextRef.current.clear();
+    speakerLockRef.current.clear();
+    clockRef.current = IDLE_CLOCK;
+    lastFloorTurnRef.current = Number.NEGATIVE_INFINITY;
+    lastFloorEpochRef.current = null;
+    minReadAheadRef.current = Number.POSITIVE_INFINITY;
+    lateWordsRef.current = 0;
+    frozenTextRef.current = 0;
+    frozenSpeakerRef.current = 0;
+    rearmedWordsRef.current = 0;
+    setModel(initialCaptionModel);
+    setLevel(EMPTY_LEVEL);
+    setWaveform(Array(32).fill(-72));
+    setPlayheadMs(Number.NEGATIVE_INFINITY);
+    setClockEpoch(null);
+  }, []);
+
   const dispatch = useCallback((event: CaptionEvent, eventId?: number) => {
     const id = eventId ?? ++eventIdRef.current;
     if (event.type === "level") {
@@ -530,6 +577,9 @@ export function useCaptionStream({reducedMotion}: StreamOptions) {
   // and reading the pre-language value served Korean a 1750 ms budget it
   // cannot meet, measured as 0 ms of CWI 2.2.1 read-ahead on the stage.
   const sessionLanguage = session.language;
+  // Flips false -> true once, when `/session` answers, and never back: a reset
+  // lands on `selecting`, not `checking`. The SSE effect below depends on it.
+  const sessionKnown = session.state !== "checking";
   useEffect(() => {
     let cancelled = false;
     fetch(`${backendOrigin}/runtime-config.json`)
@@ -640,6 +690,14 @@ export function useCaptionStream({reducedMotion}: StreamOptions) {
       };
     }
 
+    // THE STREAM WAITS FOR `/session`. That request is also what returns a
+    // reloaded studio to the picker and clears the retained transcript on the
+    // server, so connecting first races the reset and replays the previous
+    // visitor's captions onto a stage that is supposed to be blank. The flag
+    // only ever flips once (a reset lands on `selecting`, never `checking`),
+    // so this cannot churn the EventSource.
+    if (!sessionKnown) return;
+
     const source = new EventSource(`${backendOrigin}/events`);
     source.onopen = () => setConnection("live");
     source.onerror = () => setConnection("reconnecting");
@@ -647,10 +705,22 @@ export function useCaptionStream({reducedMotion}: StreamOptions) {
       try {
         const event = JSON.parse(message.data) as CaptionEvent;
         if (event.type === "boot") {
+          // `choose language` is published both at startup and when a reload
+          // resets the session, and it means the PICKER -- mapping it onto
+          // `loading` would show a spinner over a session waiting on a click.
+          const stage: SessionState =
+            event.stage === "listening"
+              ? "listening"
+              : event.stage === "choose language"
+                ? "selecting"
+                : "loading";
+          if (stage === "selecting") resetStage();
           setSession((current) => ({
             ...current,
-            state: event.stage === "listening" ? "listening" : "loading",
-            language: String(event.language ?? current.language ?? "") || null,
+            state: stage,
+            language: stage === "selecting"
+              ? null
+              : String(event.language ?? current.language ?? "") || null,
           }));
         }
         dispatch(event, Number(message.lastEventId || 0));
@@ -659,7 +729,7 @@ export function useCaptionStream({reducedMotion}: StreamOptions) {
       }
     };
     return () => source.close();
-  }, [backendOrigin, dispatch]);
+  }, [backendOrigin, dispatch, resetStage, sessionKnown]);
 
   /* SCHEDULING, IN FULL. A word is placed on the playhead once, by the word
      itself, in its own layout effect (see `MotionWord`). */

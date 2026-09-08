@@ -49,6 +49,7 @@ import {
   voiceDeviationOf,
   type CaptionType,
   type VoiceTypeRanges,
+  voiceProportion,
 } from "@/lib/caption-motion";
 import {
   acousticTimeMs,
@@ -128,6 +129,10 @@ function voiceRanges(runtime: RuntimeConfig, enhanced = false): VoiceTypeRanges 
                     scaleCurve: runtime.voiceScaleCurveEnhanced,
                     scalePoints: runtime.voiceScalePointsEnhanced} : {}),
     weight: runtime.weightRange,
+    proportionCoupling: runtime.weightProportionCoupling,
+    toneBand: runtime.weightNeutralBandHz,
+    toneSpan: runtime.weightSpanHz,
+    tonePitchTracking: runtime.weightPitchTracking,
     weightEmphasis: runtime.weightEmphasis,
     width: runtime.widthRange,
   };
@@ -461,6 +466,17 @@ const MotionWord = memo(function MotionWord({
   });
   /* A word with no emphasis holds Regular -- see `--voice-weight` below. */
   const quietWord = enhancedMotion && motion.voice.scale <= 1.005;
+  /* The CREST weight this word is heading for: its speaker's own weight, plus
+     emphasis only where the film would have bolded it. Everything below is a
+     target for the motion to rise to -- the word still RETURNS to Regular
+     400 / 100% / the face's default proportions (docs/MOTION.md). */
+  const crestWeight = Math.round(
+    400
+      + ((quietWord ? motion.registerWeight : motion.voice.weight) - 400)
+        * (1 - holdAmount),
+  );
+  const proportion = voiceProportion(
+    crestWeight, voiceRanges(runtime, enhancedMotion));
   const style: CSSVars = {
     "--speaker-color": color,
     /* The word's normalised loudness, published so `scripts/motion_diff.py`
@@ -507,13 +523,18 @@ const MotionWord = memo(function MotionWord({
     /* A LIFTED WORD IS AT REST. THE EXCLUSION RUNS BOTH WAYS. */
     "--voice-scale": (1 + (motion.voice.scale - 1) * (1 - holdAmount))
       .toFixed(3),
-    /* AN UNEMPHASISED WORD HOLDS REGULAR. */
-    "--voice-weight": String(
-      quietWord
-        ? 400
-        : Math.round(400 + (motion.voice.weight - 400) * (1 - holdAmount)),
-    ),
+    /* AN UNEMPHASISED WORD RISES TO ITS VOICE, NOT TO BOLD -- which is the
+       film's "bold is per LINE, not per word". It used to be pinned to Regular
+       400, which threw the SPEAKER away along with the emphasis and left the
+       register rendering nowhere at all. */
+    "--voice-weight": String(crestWeight),
     "--voice-width": `${motion.voice.width}%`,
+    /* 2.3.10's vertical half: thin runs tall and narrow, heavy short and wide.
+       Keyed off the CREST weight, so the proportion arrives with the weight
+       that earned it and leaves with it. */
+    "--voice-ytlc": String(proportion.ytlc),
+    "--voice-ytuc": String(proportion.ytuc),
+    "--voice-ytas": String(proportion.ytas),
     /* HOW LONG ONE GLYPH STAYS ELEVATED. */
     // The wave hands off letter to letter across ~55% of the window, so it
     // travels visibly instead of pulsing the word as one block.
