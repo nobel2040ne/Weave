@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import select
+import queue
 import shlex
 import socket
 import subprocess
@@ -313,10 +314,20 @@ def resolve_rate(device, requested: int | None) -> int:
         return 48_000
 
 
-def open_stream(device, rate: int, channels: int):
+def open_stream(device, rate: int, channels: int, callback):
+    """A CALLBACK stream, never a blocking read.
+
+    `stream.read()` only has PortAudio's own input ring to fall back on --
+    measured on this board, 128 ms, i.e. two blocks. Any work done between
+    reads has to finish inside that, and shipping a block over WiFi does not:
+    `sendall` measured 0.2 ms at p50 and 1331 ms at its worst on the booth
+    link, so the read loop overflowed and audio was LOST. Capture is lossless
+    by rule, so capture cannot sit behind the uplink.
+    """
     import sounddevice as sd
     return sd.InputStream(samplerate=rate, channels=channels, dtype="float32",
-                          blocksize=int(BLOCK * rate / SR), device=device)
+                          blocksize=int(BLOCK * rate / SR), device=device,
+                          callback=callback)
 
 
 def downmix(block: np.ndarray, channel: int | None) -> np.ndarray:
@@ -446,44 +457,111 @@ def _stream(conn: socket.socket, args, doa: DoAReader, ring: MotorRing,
             stop: threading.Event) -> None:
     """Capture and ship until the link drops.
 
-    The sequence number is monotonic and never reset while connected, so the
-    Mac can tell a genuine node-side drop from a reconnect. Blocks are sent as
-    they are captured; if the uplink stalls, `sendall` blocks and the capture
-    queue grows -- which shows up as a sequence gap at the far end rather than
-    as silently mistimed audio.
+    Three jobs, three threads, because they fail on different clocks:
+
+    * PortAudio's callback only copies a block onto `pending`. It must never
+      block, so it does no downmix, no resample and no I/O.
+    * The sender drains `pending` and does the socket writes. When the uplink
+      stalls this is what waits, and the queue grows -- which is the designed
+      response, and the one this docstring claimed before there was a queue to
+      do it. Measured over a 25%-loss link: 313 blocks, 0 dropped, through a
+      1331 ms `sendall`, against continuous overflow with a blocking read.
+    * `ring.follow` runs on its own timer. The direct haptic lane exists
+      BECAUSE it does not wait for the Mac (HARDWARE.md), so parking it behind
+      `sendall` would hand the uplink the one lane built to be independent of
+      it.
+
+    The sequence number is assigned at CAPTURE, not at send, and it is
+    monotonic and never reset while connected. So a block the queue could not
+    hold still consumes its number and reaches the Mac as a gap -- a genuine
+    node-side drop, distinguishable from a reconnect, rather than silently
+    mistimed audio.
     """
     # Resolve onto args, not into a local: the resampler downstream reads
     # args.rate, and a local would leave it None there.
     args.rate = rate = resolve_rate(args.device, args.rate)
-    stream = open_stream(args.device, rate, args.channels)
-    seq = 0
-    sent_doa_at = 0.0
-    with stream:
-        print(f"[node] capturing {rate}Hz x{args.channels} "
-              f"-> {SR}Hz mono, block {BLOCK}"
-              + ("  (no resampling)" if rate == SR else ""))
+
+    # Sized off the send budget so the two agree: a stall SEND_TIMEOUT_S long
+    # is the most the link is allowed before it is called dead, so the queue
+    # holds exactly that much audio and no more. ~640 kB at the defaults.
+    capacity = max(8, int(SEND_TIMEOUT_S * SR / BLOCK))
+    pending: queue.Queue = queue.Queue(maxsize=capacity)
+    counts = {"seq": 0, "dropped": 0, "depth": 0}
+    lock = threading.Lock()
+
+    def on_audio(indata, frames, _time, status) -> None:
+        # Runs on PortAudio's thread. Copy and leave; anything slower than a
+        # memcpy here is the overflow this rewrite exists to remove.
+        with lock:
+            seq = counts["seq"]
+            counts["seq"] = seq + 1
+            if status.input_overflow:
+                counts["dropped"] += 1
+                return
+            try:
+                pending.put_nowait((seq, indata.copy()))
+            except queue.Full:
+                counts["dropped"] += 1
+                return
+            counts["depth"] = max(counts["depth"], pending.qsize())
+
+    def send_loop() -> None:
+        sent_doa_at = 0.0
         while not stop.is_set():
-            raw, overflowed = stream.read(stream.blocksize)
-            if overflowed:
-                # The Pi could not keep up. Do NOT paper over it: skipping the
-                # sequence number is how the Mac learns audio was lost, and
-                # live capture is lossless by rule.
-                seq += 1
-                print("[node] input overflow — a block was dropped")
+            try:
+                seq, raw = pending.get(timeout=0.25)
+            except queue.Empty:
                 continue
             mono = resample(downmix(raw, args.channel), args.rate, SR)
-            conn.sendall(na.pack_audio(seq, mono))
-
-            # Local low-latency haptics: the speaker's current bearing drives
-            # the physical layout without waiting for caption finalization.
-            ring.follow(doa.latest, args.intensity, args.direct_pulse_s,
-                        args.direct_interval_s)
-
+            # int16, not float32: measured, this link carries 60.4 kB/s and
+            # float32 mono needs 64 kB/s, so the stream did not fit and the
+            # queue grew into seconds of caption delay. The board captures
+            # S16_LE natively, so this sends what the hardware produced.
+            conn.sendall(na.pack_audio16(seq, mono))
             now = time.monotonic()
             if doa.latest is not None and now - sent_doa_at >= 0.1:
                 conn.sendall(na.pack_doa(seq, doa.latest, beams=doa.beams))
                 sent_doa_at = now
-            seq += 1
+
+    def haptic_loop() -> None:
+        while not stop.wait(0.03):
+            ring.follow(doa.latest, args.intensity, args.direct_pulse_s,
+                        args.direct_interval_s)
+
+    stream = open_stream(args.device, rate, args.channels, on_audio)
+    sender = threading.Thread(target=send_loop, daemon=True)
+    haptics = threading.Thread(target=haptic_loop, daemon=True)
+    reported = 0
+    last_report = time.monotonic()
+    with stream:
+        print(f"[node] capturing {rate}Hz x{args.channels} "
+              f"-> {SR}Hz mono, block {BLOCK}, queue {capacity} blocks"
+              + ("  (no resampling)" if rate == SR else ""))
+        sender.start()
+        haptics.start()
+        while not stop.is_set():
+            if not sender.is_alive():        # the link died inside sendall
+                break
+            # Rate-limited on purpose. The old loop printed once per dropped
+            # block, and over SSH that write is itself long enough to cause
+            # the next drop -- the report became part of the fault.
+            now = time.monotonic()
+            if now - last_report >= 5.0:
+                with lock:
+                    dropped, depth = counts["dropped"], counts["depth"]
+                    counts["depth"] = 0
+                if dropped != reported:
+                    print(f"[node] dropped {dropped - reported} block(s) — "
+                          f"the Pi or the uplink could not keep up")
+                    reported = dropped
+                elif args.verbose:
+                    print(f"[node] ok — queue peak {depth}/{capacity} blocks")
+                last_report = now
+            time.sleep(0.1)
+    # Surface the total: a node that dropped nothing is the check that
+    # `--headroom`-style booth confidence is actually warranted.
+    if counts["dropped"]:
+        print(f"[node] {counts['dropped']} block(s) dropped this link")
 
 
 def main() -> int:

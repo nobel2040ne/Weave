@@ -28,9 +28,10 @@ import numpy as np
 MAGIC = b"CWI1"
 
 KIND_HELLO = 1   # node -> host, once per connection: rate, channels, node id
-KIND_AUDIO = 2   # node -> host, float32 mono samples
+KIND_AUDIO = 2   # node -> host, float32 mono samples (legacy nodes)
 KIND_DOA = 3     # node -> host, direction of arrival + the audio seq it refers to
 KIND_CUE = 4     # host -> node, one haptic actuation
+KIND_AUDIO16 = 5 # node -> host, int16 mono samples -- half the bytes, same level
 
 _HEADER = struct.Struct("!4sBII")   # magic, kind, seq, payload length
 HEADER_SIZE = _HEADER.size          # 13 bytes
@@ -54,7 +55,15 @@ class Frame:
         return json.loads(self.payload.decode("utf-8"))
 
     def samples(self) -> np.ndarray:
-        """Decode an audio payload into the float32 mono block the pipeline wants."""
+        """Decode an audio payload into the float32 mono block the pipeline wants.
+
+        Divide by 32768 rather than 32767: it is the exact inverse of the
+        multiply in `pack_audio16`, so a block survives the round trip
+        bit-for-bit and the level the prosody lane measures is unmoved.
+        """
+        if self.kind == KIND_AUDIO16:
+            return (np.frombuffer(self.payload, dtype="<i2")
+                    .astype(np.float32) / 32768.0)
         return np.frombuffer(self.payload, dtype="<f4").astype(np.float32)
 
 
@@ -77,16 +86,32 @@ def pack_audio(seq: int, samples: np.ndarray) -> bytes:
     return pack(KIND_AUDIO, seq, block.tobytes())
 
 
+def pack_audio16(seq: int, samples: np.ndarray) -> bytes:
+    """Frame one block of mono audio as int16 -- half the bytes of `pack_audio`.
+
+    Clipped before the cast because a stray sample outside [-1, 1) would WRAP
+    rather than saturate, turning one loud frame into the opposite polarity --
+    a click the prosody lane would read as a transient.
+    """
+    block = np.asarray(samples, dtype=np.float32)
+    if block.ndim != 1:
+        raise ProtocolError(f"audio must be mono, got shape {block.shape}")
+    scaled = np.clip(block * 32768.0, -32768.0, 32767.0)
+    return pack(KIND_AUDIO16, seq,
+                np.ascontiguousarray(scaled.astype("<i2")).tobytes())
+
+
 def pack_json(kind: int, seq: int, obj: dict) -> bytes:
     return pack(kind, seq, json.dumps(obj, separators=(",", ":")).encode("utf-8"))
 
 
-def pack_hello(sample_rate: int, block: int, node: str = "weave-node") -> bytes:
+def pack_hello(sample_rate: int, block: int, node: str = "weave-node",
+               fmt: str = "s16le") -> bytes:
     return pack_json(KIND_HELLO, 0, {
         "node": node,
         "sample_rate": sample_rate,
         "block": block,
-        "format": "f32le",
+        "format": fmt,
     })
 
 

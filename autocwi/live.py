@@ -521,7 +521,8 @@ class NodeLink:
                         return
                     print(f"[live] node ready: {body.get('node', 'unknown')}")
                     continue
-                if frame.kind != netaudio.KIND_AUDIO:
+                if frame.kind not in (netaudio.KIND_AUDIO,
+                                      netaudio.KIND_AUDIO16):
                     continue
 
                 gap = tracker.observe(frame.seq)
